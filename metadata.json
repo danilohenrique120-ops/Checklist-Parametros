@@ -1,0 +1,6 @@
+{
+  "name": "BioTrack - Rastreabilidade de Biorreatores",
+  "description": "Sistema de checklist, rastreabilidade e monitoramento de parâmetros de biorreatores industriais com gráficos de tendências, tolerâncias e emissão de relatórios em PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

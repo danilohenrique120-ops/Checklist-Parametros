@@ -1,0 +1,198 @@
+{
+  "entities": {
+    "ChecklistRecord": {
+      "title": "ChecklistRecord",
+      "description": "Bioreactor checklist measurement and GMP traceability record synchronized across the plant.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the checklist record",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "plantId": {
+          "type": "string",
+          "description": "Plant identifier for multi-user shared plant visibility",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^biotrack-main$"
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user who recorded or synced the checklist",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "reactorId": {
+          "type": "number",
+          "description": "Bioreactor tank number (1 to 16)"
+        },
+        "reactorTag": {
+          "type": "string",
+          "description": "Bioreactor tag (e.g. BR-01)",
+          "minLength": 2,
+          "maxLength": 16
+        },
+        "scale": {
+          "type": "string",
+          "description": "Bioreactor scale volume",
+          "enum": ["100L", "500L", "3000L", "5000L"],
+          "maxLength": 10
+        },
+        "batchId": {
+          "type": "string",
+          "description": "Production batch identifier",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "operatorName": {
+          "type": "string",
+          "description": "Name of the operator who performed the checklist",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "date": {
+          "type": "string",
+          "description": "Date of checklist in YYYY-MM-DD format",
+          "minLength": 8,
+          "maxLength": 16
+        },
+        "time": {
+          "type": "string",
+          "description": "Time of checklist in HH:mm format",
+          "minLength": 4,
+          "maxLength": 10
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Unix timestamp in milliseconds"
+        },
+        "processHours": {
+          "type": "number",
+          "description": "Elapsed cultivation time in hours"
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Whether the batch is archived in completed batches"
+        },
+        "temperature": {
+          "type": "number",
+          "description": "Measured temperature in Celsius"
+        },
+        "dissolvedOxygen": {
+          "type": "number",
+          "description": "Measured dissolved oxygen percentage"
+        },
+        "standardCurveO2": {
+          "type": "number",
+          "description": "Standard curve O2 reference percentage"
+        },
+        "agitation": {
+          "type": "number",
+          "description": "Measured agitation in RPM"
+        },
+        "pressure": {
+          "type": "number",
+          "description": "Measured pressure in bar"
+        },
+        "airflow": {
+          "type": "number",
+          "description": "Measured airflow in L/min"
+        },
+        "isTemperatureNominal": {
+          "type": "boolean",
+          "description": "Whether temperature is within nominal range"
+        },
+        "isPressureNominal": {
+          "type": "boolean",
+          "description": "Whether pressure is within nominal range"
+        },
+        "isAgitationNominal": {
+          "type": "boolean",
+          "description": "Whether agitation matches target"
+        },
+        "isAirflowNominal": {
+          "type": "boolean",
+          "description": "Whether airflow is within nominal range"
+        },
+        "isDONominal": {
+          "type": "boolean",
+          "description": "Whether dissolved oxygen is within nominal range"
+        },
+        "isFullyNominal": {
+          "type": "boolean",
+          "description": "Whether all parameters are nominal"
+        },
+        "deviationsCount": {
+          "type": "number",
+          "description": "Count of parameters out of specification"
+        },
+        "deviationNotes": {
+          "type": "string",
+          "description": "Corrective action or justification for out-of-spec parameters",
+          "maxLength": 1000
+        },
+        "operatorSignature": {
+          "type": "string",
+          "description": "Electronic signature code of the operator",
+          "maxLength": 120
+        },
+        "notes": {
+          "type": "string",
+          "description": "General observations",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when record was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when record was last updated"
+        }
+      },
+      "required": [
+        "id",
+        "plantId",
+        "authorUid",
+        "reactorId",
+        "reactorTag",
+        "scale",
+        "batchId",
+        "operatorName",
+        "date",
+        "time",
+        "timestamp",
+        "processHours",
+        "archived",
+        "temperature",
+        "dissolvedOxygen",
+        "agitation",
+        "pressure",
+        "airflow",
+        "isTemperatureNominal",
+        "isPressureNominal",
+        "isAgitationNominal",
+        "isAirflowNominal",
+        "isDONominal",
+        "isFullyNominal",
+        "deviationsCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/checklists/{checklistId}": {
+      "schema": {
+        "$ref": "#/entities/ChecklistRecord"
+      },
+      "description": "Shared collection of bioreactor checklist records for real-time plant monitoring."
+    }
+  }
+}
