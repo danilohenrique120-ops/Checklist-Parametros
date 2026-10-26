@@ -115,7 +115,7 @@ export const DO_REFERENCE_5000L: DOPhaseReference[] = [
 export const SCALE_SPECS: Record<ScaleVolume, ScaleParametersSpec> = {
   '100L': {
     temperature: { name: 'Temperatura', unit: '°C', target: 30.0, delta: 2.0, min: 28.0, max: 32.0 },
-    pressure: { name: 'Pressão', unit: 'bar', target: 0.1, delta: 0.5, min: -0.4, max: 0.6 },
+    pressure: { name: 'Pressão', unit: 'bar', target: 0.1, delta: 0.05, min: 0.05, max: 0.15 },
     agitation: { name: 'Agitação', unit: 'RPM', target: 95, delta: null, min: 95, max: 95 },
     airflow: { name: 'Vazão de Ar', unit: 'L/min', target: 85, delta: 10, min: 75, max: 95 },
     dissolvedOxygenNotes: 'Possui curva padrão de referência em 4 fases (2-58 h)',
@@ -123,21 +123,21 @@ export const SCALE_SPECS: Record<ScaleVolume, ScaleParametersSpec> = {
   },
   '500L': {
     temperature: { name: 'Temperatura', unit: '°C', target: 30.0, delta: 2.0, min: 28.0, max: 32.0 },
-    pressure: { name: 'Pressão', unit: 'bar', target: 0.2, delta: 0.5, min: -0.3, max: 0.7 },
+    pressure: { name: 'Pressão', unit: 'bar', target: 0.2, delta: 0.05, min: 0.15, max: 0.25 },
     agitation: { name: 'Agitação', unit: 'RPM', target: 117, delta: null, min: 117, max: 117 },
     airflow: { name: 'Vazão de Ar', unit: 'L/min', target: 220, delta: 10, min: 210, max: 230 },
     dissolvedOxygenNotes: 'Sem faixa de O2 definida para 500L (registro livre)',
   },
   '3000L': {
     temperature: { name: 'Temperatura', unit: '°C', target: 30.0, delta: 2.0, min: 28.0, max: 32.0 },
-    pressure: { name: 'Pressão', unit: 'bar', target: 0.3, delta: 0.5, min: -0.2, max: 0.8 },
+    pressure: { name: 'Pressão', unit: 'bar', target: 0.3, delta: 0.05, min: 0.25, max: 0.35 },
     agitation: { name: 'Agitação', unit: 'RPM', target: 200, delta: null, min: 200, max: 200 },
     airflow: { name: 'Vazão de Ar', unit: 'L/min', target: 800, delta: 10, min: 790, max: 810 },
     dissolvedOxygenNotes: 'Sem faixa de O2 definida para 3000L (registro livre)',
   },
   '5000L': {
     temperature: { name: 'Temperatura', unit: '°C', target: 30.0, delta: 2.0, min: 28.0, max: 32.0 },
-    pressure: { name: 'Pressão', unit: 'bar', target: 0.5, delta: 0.5, min: 0.0, max: 1.0 },
+    pressure: { name: 'Pressão', unit: 'bar', target: 0.5, delta: 0.05, min: 0.45, max: 0.55 },
     agitation: { name: 'Agitação', unit: 'RPM', target: 200, delta: null, min: 200, max: 200 },
     airflow: { name: 'Vazão de Ar', unit: 'L/min', target: 800, delta: 10, min: 790, max: 810 },
     dissolvedOxygenNotes: 'Possui curva padrão de referência em 4 fases (2-58 h)',
@@ -209,9 +209,9 @@ export function validateChecklistValues(
   const tempSemaphore = evaluateRangeSemaphore(values.temperature, tempMin, tempMax);
   const isTempNominal = tempSemaphore !== 'critical';
 
-  // Pressure: Target, delta +/- 0.5 bar
-  const presMin = specs.pressure.min ?? -1;
-  const presMax = specs.pressure.max ?? 2;
+  // Pressure: Target, delta +/- 0.05 bar
+  const presMin = specs.pressure.min ?? 0;
+  const presMax = specs.pressure.max ?? 1;
   const presSemaphore = evaluateRangeSemaphore(values.pressure, presMin, presMax);
   const isPresNominal = presSemaphore !== 'critical';
 
@@ -263,7 +263,7 @@ export function validateChecklistValues(
   }
   if (!isPresNominal) {
     deviations.push(
-      `Pressão fora da faixa (${values.pressure} bar vs ${presMin.toFixed(1)} a ${presMax.toFixed(1)} bar)`
+      `Pressão fora da faixa (${values.pressure} bar vs ${presMin.toFixed(2)} a ${presMax.toFixed(2)} bar)`
     );
   }
   if (!isAgitNominal) {
@@ -283,7 +283,7 @@ export function validateChecklistValues(
     warnings.push(`Temperatura próxima do limite (${values.temperature}°C · Limite: ${tempMin}–${tempMax}°C)`);
   }
   if (presSemaphore === 'warning') {
-    warnings.push(`Pressão próxima do limite (${values.pressure} bar · Limite: ${presMin.toFixed(1)}–${presMax.toFixed(1)} bar)`);
+    warnings.push(`Pressão próxima do limite (${values.pressure} bar · Limite: ${presMin.toFixed(2)}–${presMax.toFixed(2)} bar)`);
   }
   if (airSemaphore === 'warning') {
     warnings.push(`Vazão próxima do limite (${values.airflow} L/min · Limite: ${airMin}–${airMax} L/min)`);

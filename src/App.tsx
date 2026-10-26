@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChecklistRecord, ScaleVolume } from './types/bioreactor';
 import { SEED_CHECKLISTS, INITIAL_OPERATORS } from './data/seedData';
-import { REACTORS, SCALE_SPECS, getScaleByReactorId } from './constants/reactorConfig';
+import { REACTORS, SCALE_SPECS, getScaleByReactorId, validateChecklistValues } from './constants/reactorConfig';
 import { TopNav } from './components/TopNav';
 import { ParameterAveragesPanel } from './components/ParameterAveragesPanel';
 import { InteractiveCharts } from './components/InteractiveCharts';
@@ -10,6 +10,7 @@ import { ChecklistModal } from './components/ChecklistModal';
 import { PDFReportModal } from './components/PDFReportModal';
 import { DOReferenceModal } from './components/DOReferenceModal';
 import { subscribeToCloudDoc, saveToCloudDoc } from './services/firestoreService';
+import { exportStratifiedExcel } from './services/excelService';
 import {
   Activity,
   CheckCircle,
@@ -18,6 +19,7 @@ import {
   RotateCw,
   Wind,
   FileDown,
+  FileSpreadsheet,
   Plus,
   RefreshCw,
   Info,
@@ -31,6 +33,33 @@ interface CloudChecklistDocument {
   data: ChecklistRecord[];
   operators?: string[];
   lastUpdatedISO?: string;
+}
+
+function revalidateRecordList(list: ChecklistRecord[]): ChecklistRecord[] {
+  return list.map((rec) => {
+    const scale = rec.scale || getScaleByReactorId(rec.reactorId);
+    const v = validateChecklistValues(scale, {
+      temperature: rec.temperature,
+      dissolvedOxygen: rec.dissolvedOxygen,
+      standardCurveO2: rec.standardCurveO2,
+      agitation: rec.agitation,
+      pressure: rec.pressure,
+      airflow: rec.airflow,
+      processHours: rec.processHours,
+    });
+    return {
+      ...rec,
+      scale,
+      isTemperatureNominal: v.isTemperatureNominal,
+      isPressureNominal: v.isPressureNominal,
+      isAgitationNominal: v.isAgitationNominal,
+      isAirflowNominal: v.isAirflowNominal,
+      isDONominal: v.isDONominal,
+      isFullyNominal: v.isFullyNominal,
+      deviationsCount: v.deviationsCount,
+      deviationNotes: v.deviations.length > 0 ? v.deviations.join('; ') : undefined,
+    };
+  });
 }
 
 function mergeOperatorsList(savedOperators?: string[]): string[] {
@@ -60,14 +89,14 @@ function loadFromLocalStorage(): {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
         return {
-          data: parsed,
+          data: revalidateRecordList(parsed),
           operators: [...INITIAL_OPERATORS],
           lastUpdatedISO: null,
         };
       }
       if (parsed && Array.isArray(parsed.data)) {
         return {
-          data: parsed.data,
+          data: revalidateRecordList(parsed.data),
           operators: mergeOperatorsList(parsed.operators),
           lastUpdatedISO: typeof parsed.lastUpdatedISO === 'string' ? parsed.lastUpdatedISO : null,
         };
@@ -77,7 +106,7 @@ function loadFromLocalStorage(): {
     console.error('Failed to load records from localStorage', e);
   }
   return {
-    data: SEED_CHECKLISTS,
+    data: revalidateRecordList(SEED_CHECKLISTS),
     operators: [...INITIAL_OPERATORS],
     lastUpdatedISO: null,
   };
@@ -151,10 +180,11 @@ export default function App() {
         if (cloudData && Array.isArray(cloudData.data) && !isLocalNewerOnFirstLoad) {
           // A nuvem tem dados mais recentes -> atualiza a tela e o localStorage
           const mergedOps = mergeOperatorsList(cloudData.operators);
+          const revalidatedCloud = revalidateRecordList(cloudData.data);
           isRemoteSyncRef.current = true;
-          setRecords(cloudData.data);
+          setRecords(revalidatedCloud);
           setOperators(mergedOps);
-          saveToLocalStorage(cloudData.data, mergedOps, cloudData.lastUpdatedISO);
+          saveToLocalStorage(revalidatedCloud, mergedOps, cloudData.lastUpdatedISO);
 
           setSyncStatus('synced');
           isInitialLoadDoneRef.current = true;
@@ -325,8 +355,6 @@ export default function App() {
     <div className="min-h-screen bg-[#080C14] text-slate-100 pb-16">
       {/* Top Nav */}
       <TopNav
-        onOpenChecklist={() => handleOpenChecklistForReactor(selectedReactorId === 'all' ? 1 : selectedReactorId)}
-        onOpenPDFModal={() => setIsPDFModalOpen(true)}
         onOpenDORefModal={() => setIsDORefModalOpen(true)}
         activeSection={activeSection}
         onNavigate={setActiveSection}
@@ -400,9 +428,19 @@ export default function App() {
             <button
               onClick={() => setIsPDFModalOpen(true)}
               className="px-3.5 py-2 text-xs font-semibold text-slate-200 bg-[#131C2E] border border-slate-700/80 hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              title="Gerar Relatório em PDF"
             >
               <FileDown className="w-3.5 h-3.5 text-cyan-400" />
               PDF
+            </button>
+
+            <button
+              onClick={() => exportStratifiedExcel({ records, selectedReactorId })}
+              className="px-3.5 py-2 text-xs font-semibold text-emerald-200 bg-emerald-950/50 border border-emerald-500/50 hover:bg-emerald-900/60 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              title="Extrair planilha Excel estratificada por parâmetro, lote, escala e desvios"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              Excel
             </button>
           </div>
         </div>
@@ -542,7 +580,7 @@ export default function App() {
               </div>
               <div>
                 <span className="text-slate-400 font-sans">Pressão: </span>
-                <strong className="text-slate-100">{activeSpecs.pressure.target} bar</strong> (Delta ±0.5 bar)
+                <strong className="text-slate-100">{activeSpecs.pressure.target.toFixed(2)} bar</strong> (Delta ±0.05 bar · Faixa {(activeSpecs.pressure.min ?? 0).toFixed(2)} a {(activeSpecs.pressure.max ?? 0).toFixed(2)} bar)
               </div>
               <div>
                 <span className="text-slate-400 font-sans">Agitação: </span>

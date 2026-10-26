@@ -90,10 +90,10 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
       max: pressStats.max,
       decimals: 2,
       targetLabel: `${specs.pressure.target.toFixed(2)} bar`,
-      deltaLabel: `± 0.5 bar (${(specs.pressure.min ?? 0).toFixed(1)} a ${(specs.pressure.max ?? 0).toFixed(1)} bar)`,
+      deltaLabel: `± 0.05 bar (${(specs.pressure.min ?? 0).toFixed(2)} a ${(specs.pressure.max ?? 0).toFixed(2)} bar)`,
       isNominal:
         count === 0 ||
-        (pressStats.avg >= (specs.pressure.min ?? -1) && pressStats.avg <= (specs.pressure.max ?? 2)),
+        (pressStats.avg >= (specs.pressure.min ?? 0) && pressStats.avg <= (specs.pressure.max ?? 1)),
       diffFromTarget: count > 0 ? pressStats.avg - specs.pressure.target : 0,
     },
     {

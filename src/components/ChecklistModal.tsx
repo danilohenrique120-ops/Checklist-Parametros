@@ -482,12 +482,12 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-slate-100">Pressão (bar) *</label>
                   <span className="text-[11px] font-mono text-slate-400">
-                    Alvo: {specs.pressure.target.toFixed(1)} (±0.5)
+                    Alvo: {specs.pressure.target.toFixed(2)} (±0.05)
                   </span>
                 </div>
                 <input
                   type="number"
-                  step="0.05"
+                  step="0.01"
                   required
                   value={pressure}
                   onChange={(e) => setPressure(parseFloat(e.target.value) || 0)}
@@ -495,7 +495,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 />
                 <div className="mt-2 flex items-center justify-between text-[11px]">
                   <span className="text-slate-400 font-mono">
-                    Aceitável: {(specs.pressure.min ?? 0).toFixed(1)} a {(specs.pressure.max ?? 0).toFixed(1)} bar
+                    Aceitável: {(specs.pressure.min ?? 0).toFixed(2)} a {(specs.pressure.max ?? 0).toFixed(2)} bar
                   </span>
                   {renderSemaphoreBadge(validation.presSemaphore)}
                 </div>

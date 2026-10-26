@@ -1,17 +1,13 @@
 import React from 'react';
-import { Plus, FileDown, Table } from 'lucide-react';
+import { Table } from 'lucide-react';
 
 interface TopNavProps {
-  onOpenChecklist: () => void;
-  onOpenPDFModal: () => void;
   onOpenDORefModal: () => void;
   activeSection: 'dashboard' | 'averages' | 'trends' | 'table';
   onNavigate: (section: 'dashboard' | 'averages' | 'trends' | 'table') => void;
 }
 
 export const TopNav: React.FC<TopNavProps> = ({
-  onOpenChecklist,
-  onOpenPDFModal,
   onOpenDORefModal,
   activeSection,
   onNavigate,
@@ -85,31 +81,16 @@ export const TopNav: React.FC<TopNavProps> = ({
           >
             Rastreabilidade GMP
           </button>
-          <button
-            onClick={onOpenDORefModal}
-            className="transition-colors hover:text-slate-100 flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <Table className="w-3.5 h-3.5 text-cyan-500" />
-            Curvas O2
-          </button>
         </nav>
 
-        {/* Zone 3: Primary actions */}
+        {/* Zone 3: Curvas O2 Reference */}
         <div className="flex items-center gap-2.5">
           <button
-            onClick={onOpenPDFModal}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-200 bg-[#131C2E] border border-slate-700/80 rounded-lg hover:bg-slate-800 hover:border-slate-600 transition-colors whitespace-nowrap"
+            onClick={onOpenDORefModal}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-200 bg-[#131C2E] border border-slate-700/80 rounded-lg hover:bg-slate-800 hover:border-slate-600 transition-colors whitespace-nowrap"
           >
-            <FileDown className="w-3.5 h-3.5 text-cyan-400" />
-            Relatório PDF
-          </button>
-
-          <button
-            onClick={onOpenChecklist}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors whitespace-nowrap"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            Novo Checklist
+            <Table className="w-3.5 h-3.5 text-cyan-400" />
+            Curvas O2
           </button>
         </div>
       </div>

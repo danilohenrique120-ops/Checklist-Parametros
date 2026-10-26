@@ -41,11 +41,11 @@ const PARAM_CONFIGS: Record<ParameterKey, ParamConfig> = {
     unit: 'bar',
     color: '#818cf8', // indigo-400
     targetGetter: (s) => SCALE_SPECS[s].pressure.target,
-    deltaGetter: () => 0.5,
+    deltaGetter: () => 0.05,
     valGetter: (r) => r.pressure,
     minMaxDomain: (s) => {
       const tgt = SCALE_SPECS[s].pressure.target;
-      return [Math.max(-0.5, tgt - 0.9), tgt + 0.9];
+      return [Math.max(0, Number((tgt - 0.12).toFixed(2))), Number((tgt + 0.12).toFixed(2))];
     },
   },
   agitation: {

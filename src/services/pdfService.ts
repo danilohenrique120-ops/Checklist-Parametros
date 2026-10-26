@@ -107,7 +107,7 @@ export function generateBioreactorPDFReport(options: PDFReportOptions): jsPDF {
     ['Temperatura', `${avgTemp.toFixed(2)} °C`, '30.0 °C', '± 2.0 °C', '28.0 °C a 32.0 °C'],
     ['Oxigênio Dissolvido', `${avgDO.toFixed(2)} %`, scaleToUse === '100L' || scaleToUse === '5000L' ? 'Curva 4 fases' : 'Livre', '-', scaleToUse === '100L' || scaleToUse === '5000L' ? 'Tabela de Fases (2-58h)' : 'Registro livre'],
     ['Agitação', `${avgAgit.toFixed(1)} RPM`, `${specs.agitation.target} RPM`, 'Sem delta', `${specs.agitation.target} RPM (Fixo)`],
-    ['Pressão', `${avgPress.toFixed(2)} bar`, `${specs.pressure.target.toFixed(1)} bar`, '± 0.5 bar', `${(specs.pressure.min ?? 0).toFixed(1)} a ${(specs.pressure.max ?? 0).toFixed(1)} bar`],
+    ['Pressão', `${avgPress.toFixed(2)} bar`, `${specs.pressure.target.toFixed(2)} bar`, '± 0.05 bar', `${(specs.pressure.min ?? 0).toFixed(2)} a ${(specs.pressure.max ?? 0).toFixed(2)} bar`],
     ['Vazão de Ar', `${avgAir.toFixed(1)} L/min`, `${specs.airflow.target} L/min`, '± 10 L/min', `${specs.airflow.min} a ${specs.airflow.max} L/min`],
   ];
 

@@ -459,14 +459,6 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
             <AlertTriangle className={`w-3.5 h-3.5 ${onlyDeviations ? 'text-white' : 'text-rose-400'}`} />
             Apenas Fora da Faixa ({deviationsTotalInTab})
           </button>
-
-          <button
-            onClick={onOpenPDFModal}
-            className="px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            Exportar PDF
-          </button>
         </div>
       </div>
 
