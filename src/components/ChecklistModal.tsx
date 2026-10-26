@@ -8,14 +8,15 @@ import {
   validateChecklistValues,
 } from '../constants/reactorConfig';
 import { INITIAL_OPERATORS } from '../data/seedData';
-import { X, CheckCircle, AlertTriangle, Activity, Check, AlertCircle } from 'lucide-react';
+import { X, CheckCircle, AlertTriangle, Activity, Check, AlertCircle, UserPlus } from 'lucide-react';
 
 interface ChecklistModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (record: ChecklistRecord) => void;
   initialReactorId?: number;
-  defaultOperatorName?: string;
+  operators?: string[];
+  onAddOperator?: (newOperator: string) => void;
 }
 
 export const ChecklistModal: React.FC<ChecklistModalProps> = ({
@@ -23,10 +24,14 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   onClose,
   onSave,
   initialReactorId = 2,
-  defaultOperatorName,
+  operators = INITIAL_OPERATORS,
+  onAddOperator,
 }) => {
   const [reactorId, setReactorId] = useState<number>(initialReactorId);
-  const [operatorName, setOperatorName] = useState<string>(defaultOperatorName || INITIAL_OPERATORS[0]);
+  const [operatorName, setOperatorName] = useState<string>(operators[0] || INITIAL_OPERATORS[0]);
+  const [isCustomOperatorMode, setIsCustomOperatorMode] = useState<boolean>(false);
+  const [customOperatorInput, setCustomOperatorInput] = useState<string>('');
+
   const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState<string>(
     new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
@@ -37,7 +42,6 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   // Parameters
   const [temperature, setTemperature] = useState<number>(30.0);
   const [dissolvedOxygen, setDissolvedOxygen] = useState<number>(21.0);
-  const [standardCurveO2, setStandardCurveO2] = useState<string>('0.650');
   const [agitation, setAgitation] = useState<number>(95);
   const [pressure, setPressure] = useState<number>(0.1);
   const [airflow, setAirflow] = useState<number>(85);
@@ -53,10 +57,10 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   }, [initialReactorId]);
 
   useEffect(() => {
-    if (defaultOperatorName) {
-      setOperatorName(defaultOperatorName.slice(0, 100));
+    if (!operators.includes(operatorName) && operators.length > 0 && !isCustomOperatorMode) {
+      setOperatorName(operators[0]);
     }
-  }, [defaultOperatorName]);
+  }, [operators, operatorName, isCustomOperatorMode]);
 
   // When reactorId changes, update default parameters to target
   useEffect(() => {
@@ -76,13 +80,10 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
 
   if (!isOpen) return null;
 
-  const parsedCurve = standardCurveO2.trim() !== '' ? parseFloat(standardCurveO2) : undefined;
-
-  // Validation in real-time with 3-tier color semaphore
+  // Validation in real-time with 3-tier color semaphore (without standardCurveO2)
   const validation = validateChecklistValues(scale, {
     temperature,
     dissolvedOxygen,
-    standardCurveO2: parsedCurve,
     agitation,
     pressure,
     airflow,
@@ -153,13 +154,40 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     );
   };
 
+  const handleConfirmCustomOperator = () => {
+    const trimmed = customOperatorInput.trim();
+    if (!trimmed) return;
+    if (onAddOperator) {
+      onAddOperator(trimmed);
+    }
+    setOperatorName(trimmed);
+    setCustomOperatorInput('');
+    setIsCustomOperatorMode(false);
+  };
+
+  const effectiveOperatorName = isCustomOperatorMode
+    ? customOperatorInput.trim() || operatorName
+    : operatorName;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const finalOperator = (isCustomOperatorMode ? customOperatorInput.trim() : operatorName.trim()) || 'Operador';
+
+    if (isCustomOperatorMode && !customOperatorInput.trim()) {
+      setErrorMsg('Por favor, digite o nome do novo operador ou selecione um nome da lista suspensa.');
+      return;
+    }
+
     if (!validation.isFullyNominal && !notes.trim()) {
       setErrorMsg(
         'Atenção GMP: Como há parâmetro(s) em VERMELHO (fora da faixa aceitável), é obrigatório preencher a justificativa ou ação corretiva tomada.'
       );
       return;
+    }
+
+    // Se for um nome novo, incrementa automaticamente na lista suspensa
+    if (onAddOperator && finalOperator) {
+      onAddOperator(finalOperator);
     }
 
     const newRecord: ChecklistRecord = {
@@ -168,7 +196,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       reactorTag: `BR-${String(reactorId).padStart(2, '0')}`,
       scale,
       batchId: batchId || `L-${scale}-${Date.now().toString().slice(-4)}`,
-      operatorName: operatorName.trim() || 'Operador',
+      operatorName: finalOperator,
       date,
       time,
       timestamp: new Date(`${date}T${time}:00`).getTime(),
@@ -176,7 +204,6 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       archived: false,
       temperature,
       dissolvedOxygen,
-      standardCurveO2: parsedCurve,
       agitation,
       pressure,
       airflow,
@@ -188,10 +215,12 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       isFullyNominal: validation.isFullyNominal,
       deviationsCount: validation.deviationsCount,
       deviationNotes: validation.deviations.length > 0 ? validation.deviations.join('; ') : undefined,
-      operatorSignature: `OP-${operatorName.split(' ')[0].toUpperCase()}`,
+      operatorSignature: `OP-${finalOperator.split(' ')[0].toUpperCase()}`,
       notes: notes.trim(),
     };
 
+    setIsCustomOperatorMode(false);
+    setCustomOperatorInput('');
     onSave(newRecord);
     onClose();
   };
@@ -250,26 +279,92 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </span>
               </div>
 
-              {/* Operator */}
+              {/* Operator Select + Add New Operator */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nome do Operador *
-                </label>
-                <input
-                  type="text"
-                  list="operators-list"
-                  value={operatorName}
-                  onChange={(e) => setOperatorName(e.target.value)}
-                  placeholder="Nome do operador"
-                  required
-                  className="w-full text-xs bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                />
-                <datalist id="operators-list">
-                  {INITIAL_OPERATORS.map((op) => (
-                    <option key={op} value={op} />
-                  ))}
-                </datalist>
-                <span className="text-[11px] text-slate-400 mt-1 block">Responsável pelo registro</span>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-300 whitespace-nowrap">
+                    Nome *
+                  </label>
+                  {!isCustomOperatorMode ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomOperatorMode(true);
+                        setCustomOperatorInput('');
+                      }}
+                      className="text-[11px] leading-4 font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 whitespace-nowrap"
+                    >
+                      <UserPlus className="w-3 h-3 shrink-0" />
+                      Novo
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomOperatorMode(false);
+                        setCustomOperatorInput('');
+                      }}
+                      className="text-[11px] leading-4 font-semibold text-slate-400 hover:text-slate-200 whitespace-nowrap"
+                    >
+                      Lista
+                    </button>
+                  )}
+                </div>
+
+                {!isCustomOperatorMode ? (
+                  <select
+                    value={operatorName}
+                    onChange={(e) => {
+                      if (e.target.value === '__ADD_NEW__') {
+                        setIsCustomOperatorMode(true);
+                        setCustomOperatorInput('');
+                      } else {
+                        setOperatorName(e.target.value);
+                      }
+                    }}
+                    className="w-full text-xs bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    {operators.map((op) => (
+                      <option key={op} value={op}>
+                        {op}
+                      </option>
+                    ))}
+                    <option value="__ADD_NEW__" className="text-cyan-400 font-semibold">
+                      + Digitar um nome novo...
+                    </option>
+                  </select>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={customOperatorInput}
+                      onChange={(e) => setCustomOperatorInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleConfirmCustomOperator();
+                        }
+                      }}
+                      placeholder="Digite o novo operador..."
+                      autoFocus
+                      className="w-full text-xs bg-[#080C14] border border-cyan-500/70 rounded-lg px-2.5 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleConfirmCustomOperator}
+                      disabled={!customOperatorInput.trim()}
+                      className="px-2.5 py-2 text-xs font-semibold bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 rounded-lg transition-colors shrink-0"
+                      title="Adicionar à lista suspensa"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  {isCustomOperatorMode
+                    ? 'Será adicionado à lista suspensa'
+                    : 'Responsável pelo registro'}
+                </span>
               </div>
 
               {/* Date & Time */}
@@ -471,32 +566,6 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                   {renderSemaphoreBadge(validation.doSemaphore)}
                 </div>
               </div>
-
-              {/* Curva Padrão O2 (Opcional) */}
-              <div className={`p-3.5 rounded-lg border transition-all ${getSemaphoreCardStyle(validation.curveSemaphore)}`}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-100">Curva Padrão O2</label>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {doPhase ? `Fase: ${doPhase.phase}` : 'Opcional'}
-                  </span>
-                </div>
-                <input
-                  type="number"
-                  step="0.001"
-                  value={standardCurveO2}
-                  onChange={(e) => setStandardCurveO2(e.target.value)}
-                  placeholder="Ex: 0.250"
-                  className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.curveSemaphore)}`}
-                />
-                <div className="mt-2 flex items-center justify-between text-[11px]">
-                  <span className="text-slate-400 font-mono">
-                    {doPhase
-                      ? `${doPhase.standardCurveMin.toFixed(3)} a ${doPhase.standardCurveMax.toFixed(3)}`
-                      : 'Sem curva tabelada'}
-                  </span>
-                  {renderSemaphoreBadge(validation.curveSemaphore)}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -575,7 +644,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
           {/* Footer Controls */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-800">
             <span className="text-xs text-slate-400 font-mono">
-              Assinatura Eletrônica: OP-{operatorName.split(' ')[0]?.toUpperCase() || 'OPERADOR'}
+              Assinatura Eletrônica: OP-{effectiveOperatorName.split(' ')[0]?.toUpperCase() || 'OPERADOR'}
             </span>
             <div className="flex items-center gap-3">
               <button

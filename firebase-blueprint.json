@@ -2,12 +2,16 @@
   "entities": {
     "CloudChecklistDocument": {
       "title": "CloudChecklistDocument",
-      "description": "Shared plant state document storing all bioreactor checklist records and lastUpdatedISO timestamp.",
+      "description": "Shared plant state document storing all bioreactor checklist records, operator list, and lastUpdatedISO timestamp.",
       "type": "object",
       "properties": {
         "data": {
           "type": "array",
           "description": "List of bioreactor checklist records"
+        },
+        "operators": {
+          "type": "array",
+          "description": "Dynamic list of operator names"
         },
         "lastUpdatedISO": {
           "type": "string",

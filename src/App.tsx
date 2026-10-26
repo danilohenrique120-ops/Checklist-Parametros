@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChecklistRecord, ScaleVolume } from './types/bioreactor';
-import { SEED_CHECKLISTS } from './data/seedData';
+import { SEED_CHECKLISTS, INITIAL_OPERATORS } from './data/seedData';
 import { REACTORS, SCALE_SPECS, getScaleByReactorId } from './constants/reactorConfig';
 import { TopNav } from './components/TopNav';
 import { ParameterAveragesPanel } from './components/ParameterAveragesPanel';
@@ -23,26 +23,52 @@ import {
   Info,
 } from 'lucide-react';
 
-const STORAGE_KEY = 'biotrack_checklists_v4';
+const STORAGE_KEY = 'biotrack_checklists_v5';
 const CLOUD_COLLECTION = 'bioreactor_checklists';
 const CLOUD_DOC_ID = 'shared_plant_state';
 
 interface CloudChecklistDocument {
   data: ChecklistRecord[];
+  operators?: string[];
   lastUpdatedISO?: string;
 }
 
-function loadFromLocalStorage(): { data: ChecklistRecord[]; lastUpdatedISO: string | null } {
+function mergeOperatorsList(savedOperators?: string[]): string[] {
+  const base = [...INITIAL_OPERATORS];
+  if (Array.isArray(savedOperators)) {
+    for (const op of savedOperators) {
+      const trimmed = typeof op === 'string' ? op.trim() : '';
+      if (
+        trimmed &&
+        !base.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())
+      ) {
+        base.push(trimmed);
+      }
+    }
+  }
+  return base;
+}
+
+function loadFromLocalStorage(): {
+  data: ChecklistRecord[];
+  operators: string[];
+  lastUpdatedISO: string | null;
+} {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return { data: parsed, lastUpdatedISO: null };
+        return {
+          data: parsed,
+          operators: [...INITIAL_OPERATORS],
+          lastUpdatedISO: null,
+        };
       }
       if (parsed && Array.isArray(parsed.data)) {
         return {
           data: parsed.data,
+          operators: mergeOperatorsList(parsed.operators),
           lastUpdatedISO: typeof parsed.lastUpdatedISO === 'string' ? parsed.lastUpdatedISO : null,
         };
       }
@@ -50,15 +76,24 @@ function loadFromLocalStorage(): { data: ChecklistRecord[]; lastUpdatedISO: stri
   } catch (e) {
     console.error('Failed to load records from localStorage', e);
   }
-  return { data: SEED_CHECKLISTS, lastUpdatedISO: null };
+  return {
+    data: SEED_CHECKLISTS,
+    operators: [...INITIAL_OPERATORS],
+    lastUpdatedISO: null,
+  };
 }
 
-function saveToLocalStorage(data: ChecklistRecord[], lastUpdatedISO?: string) {
+function saveToLocalStorage(
+  data: ChecklistRecord[],
+  operators: string[],
+  lastUpdatedISO?: string
+) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         data,
+        operators,
         lastUpdatedISO: lastUpdatedISO || new Date().toISOString(),
       })
     );
@@ -68,19 +103,22 @@ function saveToLocalStorage(data: ChecklistRecord[], lastUpdatedISO?: string) {
 }
 
 export default function App() {
-  const [records, setRecords] = useState<ChecklistRecord[]>(() => loadFromLocalStorage().data);
+  const initialLocal = loadFromLocalStorage();
+  const [records, setRecords] = useState<ChecklistRecord[]>(initialLocal.data);
+  const [operators, setOperators] = useState<string[]>(initialLocal.operators);
   const [, setSyncStatus] = useState<'loading' | 'saving' | 'synced' | 'offline'>('loading');
 
   const isRemoteSyncRef = useRef<boolean>(false);
   const isInitialLoadDoneRef = useRef<boolean>(false);
 
-  const [selectedReactorId, setSelectedReactorId] = useState<number | 'all'>(2);
+  // Inicia filtrado em TODOS os biorreatores ('all')
+  const [selectedReactorId, setSelectedReactorId] = useState<number | 'all'>('all');
   const [activeSection, setActiveSection] = useState<'dashboard' | 'averages' | 'trends' | 'table'>('dashboard');
   const [complianceScope, setComplianceScope] = useState<'all' | 'selected'>('all');
 
   // Modals
   const [isChecklistOpen, setIsChecklistOpen] = useState<boolean>(false);
-  const [checklistPresetReactorId, setChecklistPresetReactorId] = useState<number>(2);
+  const [checklistPresetReactorId, setChecklistPresetReactorId] = useState<number>(1);
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [isDORefModalOpen, setIsDORefModalOpen] = useState<boolean>(false);
 
@@ -93,6 +131,7 @@ export default function App() {
     const cached = loadFromLocalStorage();
     isRemoteSyncRef.current = true;
     setRecords(cached.data);
+    setOperators(cached.operators);
 
     let isFirstCloudSnapshot = true;
 
@@ -111,9 +150,11 @@ export default function App() {
 
         if (cloudData && Array.isArray(cloudData.data) && !isLocalNewerOnFirstLoad) {
           // A nuvem tem dados mais recentes -> atualiza a tela e o localStorage
+          const mergedOps = mergeOperatorsList(cloudData.operators);
           isRemoteSyncRef.current = true;
           setRecords(cloudData.data);
-          saveToLocalStorage(cloudData.data, cloudData.lastUpdatedISO);
+          setOperators(mergedOps);
+          saveToLocalStorage(cloudData.data, mergedOps, cloudData.lastUpdatedISO);
 
           setSyncStatus('synced');
           isInitialLoadDoneRef.current = true;
@@ -126,6 +167,7 @@ export default function App() {
           isRemoteSyncRef.current = false;
           saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
             data: cached.data,
+            operators: cached.operators,
             lastUpdatedISO: nowIso,
           })
             .then(() => {
@@ -159,13 +201,14 @@ export default function App() {
     const nowIso = new Date().toISOString();
 
     // Salva imediatamente no localStorage com o novo timestamp
-    saveToLocalStorage(records, nowIso);
+    saveToLocalStorage(records, operators, nowIso);
 
     setSyncStatus('saving');
     const timer = setTimeout(async () => {
       try {
         await saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
           data: records,
+          operators,
           lastUpdatedISO: nowIso,
         });
         setSyncStatus('synced');
@@ -176,7 +219,19 @@ export default function App() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [records]);
+  }, [records, operators]);
+
+  // Incrementar novo operador na lista suspensa
+  const handleAddOperator = (newOp: string) => {
+    const trimmed = newOp.trim();
+    if (!trimmed) return;
+    setOperators((prev) => {
+      if (prev.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
+        return prev;
+      }
+      return [...prev, trimmed];
+    });
+  };
 
   // Handle adding new record
   const handleSaveRecord = (newRec: ChecklistRecord) => {
@@ -203,7 +258,8 @@ export default function App() {
 
   const handleResetData = () => {
     setRecords(SEED_CHECKLISTS);
-    setSelectedReactorId(2);
+    setOperators([...INITIAL_OPERATORS]);
+    setSelectedReactorId('all');
   };
 
   const handleOpenChecklistForReactor = (reactorId: number) => {
@@ -217,12 +273,12 @@ export default function App() {
   const activeSpecs = SCALE_SPECS[activeScale];
   const activeReactor = selectedReactorId === 'all' ? null : REACTORS.find((r) => r.id === selectedReactorId);
 
-  // Filtered records for charts & parameter averages (prefer active batches unless reactor only has archived)
+  // Filtered records for charts & parameter averages (quando 'all', inclui todos os biorreatores)
   const rawScopeRecords = records.filter((r) => {
     if (selectedReactorId !== 'all') {
       return r.reactorId === selectedReactorId;
     }
-    return r.scale === activeScale;
+    return true;
   });
 
   const activeScopeRecords = rawScopeRecords.filter((r) => !r.archived);
@@ -269,7 +325,7 @@ export default function App() {
     <div className="min-h-screen bg-[#080C14] text-slate-100 pb-16">
       {/* Top Nav */}
       <TopNav
-        onOpenChecklist={() => handleOpenChecklistForReactor(selectedReactorId === 'all' ? 2 : selectedReactorId)}
+        onOpenChecklist={() => handleOpenChecklistForReactor(selectedReactorId === 'all' ? 1 : selectedReactorId)}
         onOpenPDFModal={() => setIsPDFModalOpen(true)}
         onOpenDORefModal={() => setIsDORefModalOpen(true)}
         activeSection={activeSection}
@@ -285,10 +341,10 @@ export default function App() {
                 <Activity className="w-4 h-4" />
               </span>
               <h1 className="text-xl font-bold tracking-tight text-slate-50">
-                {activeReactor ? `${activeReactor.tag} · ${activeReactor.name}` : 'Visão Consolidada de Biorreatores'}
+                {activeReactor ? `${activeReactor.tag} · ${activeReactor.name}` : 'Todos os Biorreatores (1 ao 16)'}
               </h1>
               <span className="text-xs font-mono text-cyan-400 font-semibold">
-                · Escala {activeScale}
+                {activeReactor ? `· Escala ${activeScale}` : '· Visão Consolidada'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1.5">
@@ -302,7 +358,7 @@ export default function App() {
               onChange={(e) => setSelectedReactorId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
               className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/60 font-semibold"
             >
-              <option value="all">Visão Consolidada (Escala 100L)</option>
+              <option value="all">Todos os Biorreatores (1 ao 16)</option>
               <optgroup label="100L (Tanques 1 ao 5)">
                 {REACTORS.filter((r) => r.scale === '100L').map((r) => (
                   <option key={r.id} value={r.id}>
@@ -334,7 +390,7 @@ export default function App() {
             </select>
 
             <button
-              onClick={() => handleOpenChecklistForReactor(selectedReactorId === 'all' ? 2 : selectedReactorId)}
+              onClick={() => handleOpenChecklistForReactor(selectedReactorId === 'all' ? 1 : selectedReactorId)}
               className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -411,7 +467,7 @@ export default function App() {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {activeReactor ? activeReactor.tag : `Escala ${activeScale}`} ({chartRecords.length})
+                  {activeReactor ? activeReactor.tag : 'Filtro Atual'} ({chartRecords.length})
                 </button>
               </div>
             </div>
@@ -567,6 +623,8 @@ export default function App() {
         onClose={() => setIsChecklistOpen(false)}
         onSave={handleSaveRecord}
         initialReactorId={checklistPresetReactorId}
+        operators={operators}
+        onAddOperator={handleAddOperator}
       />
 
       <PDFReportModal
