@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChecklistRecord, ScaleVolume } from './types/bioreactor';
 import { SEED_CHECKLISTS } from './data/seedData';
 import { REACTORS, SCALE_SPECS, getScaleByReactorId } from './constants/reactorConfig';
@@ -9,19 +9,7 @@ import { TraceabilityTable } from './components/TraceabilityTable';
 import { ChecklistModal } from './components/ChecklistModal';
 import { PDFReportModal } from './components/PDFReportModal';
 import { DOReferenceModal } from './components/DOReferenceModal';
-import {
-  auth,
-  User,
-  onAuthStateChanged,
-  signInWithGoogle,
-  signOutUser,
-  saveChecklistRecordToFirestore,
-  toggleBatchArchiveInFirestore,
-  deleteChecklistFromFirestore,
-  seedInitialChecklistsIfNeeded,
-  resetCloudChecklistsToSeed,
-  subscribeToPlantChecklists,
-} from './firebase';
+import { subscribeToCloudDoc, saveToCloudDoc } from './services/firestoreService';
 import {
   Activity,
   CheckCircle,
@@ -33,29 +21,58 @@ import {
   Plus,
   RefreshCw,
   Info,
-  Cloud,
-  LogIn,
 } from 'lucide-react';
 
-const STORAGE_KEY = 'biotrack_checklists_v3';
+const STORAGE_KEY = 'biotrack_checklists_v4';
+const CLOUD_COLLECTION = 'bioreactor_checklists';
+const CLOUD_DOC_ID = 'shared_plant_state';
+
+interface CloudChecklistDocument {
+  data: ChecklistRecord[];
+  lastUpdatedISO?: string;
+}
+
+function loadFromLocalStorage(): { data: ChecklistRecord[]; lastUpdatedISO: string | null } {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return { data: parsed, lastUpdatedISO: null };
+      }
+      if (parsed && Array.isArray(parsed.data)) {
+        return {
+          data: parsed.data,
+          lastUpdatedISO: typeof parsed.lastUpdatedISO === 'string' ? parsed.lastUpdatedISO : null,
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load records from localStorage', e);
+  }
+  return { data: SEED_CHECKLISTS, lastUpdatedISO: null };
+}
+
+function saveToLocalStorage(data: ChecklistRecord[], lastUpdatedISO?: string) {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        data,
+        lastUpdatedISO: lastUpdatedISO || new Date().toISOString(),
+      })
+    );
+  } catch (e) {
+    console.error('Failed to save records to localStorage', e);
+  }
+}
 
 export default function App() {
-  const [records, setRecords] = useState<ChecklistRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('Failed to load records from storage', e);
-    }
-    return SEED_CHECKLISTS;
-  });
+  const [records, setRecords] = useState<ChecklistRecord[]>(() => loadFromLocalStorage().data);
+  const [, setSyncStatus] = useState<'loading' | 'saving' | 'synced' | 'offline'>('loading');
 
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(false);
-  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
-  const [cloudNotice, setCloudNotice] = useState<string | null>(null);
+  const isRemoteSyncRef = useRef<boolean>(false);
+  const isInitialLoadDoneRef = useRef<boolean>(false);
 
   const [selectedReactorId, setSelectedReactorId] = useState<number | 'all'>(2);
   const [activeSection, setActiveSection] = useState<'dashboard' | 'averages' | 'trends' | 'table'>('dashboard');
@@ -67,118 +84,113 @@ export default function App() {
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [isDORefModalOpen, setIsDORefModalOpen] = useState<boolean>(false);
 
-  // Track Firebase Auth state
+  // EFEITO 1: Carregar e escutar o documento no Firestore em tempo real (sem login)
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthReady(true);
-      if (!currentUser) {
-        setIsCloudSynced(false);
+    isInitialLoadDoneRef.current = false;
+    setSyncStatus('loading');
+
+    // 1. Carrega instantaneamente do cache local (localStorage)
+    const cached = loadFromLocalStorage();
+    isRemoteSyncRef.current = true;
+    setRecords(cached.data);
+
+    let isFirstCloudSnapshot = true;
+
+    // 2. Abre conexão em tempo real com o Firestore
+    const unsubscribe = subscribeToCloudDoc<CloudChecklistDocument>(
+      CLOUD_COLLECTION,
+      CLOUD_DOC_ID,
+      (cloudData) => {
+        const localTime = cached.lastUpdatedISO ? Date.parse(cached.lastUpdatedISO) : 0;
+        const cloudTime = cloudData?.lastUpdatedISO ? Date.parse(cloudData.lastUpdatedISO) : 0;
+
+        // Verifica se o cache local tem edições mais novas que a nuvem no 1º carregamento
+        const isLocalNewerOnFirstLoad =
+          isFirstCloudSnapshot && localTime > 0 && localTime > cloudTime;
+        isFirstCloudSnapshot = false;
+
+        if (cloudData && Array.isArray(cloudData.data) && !isLocalNewerOnFirstLoad) {
+          // A nuvem tem dados mais recentes -> atualiza a tela e o localStorage
+          isRemoteSyncRef.current = true;
+          setRecords(cloudData.data);
+          saveToLocalStorage(cloudData.data, cloudData.lastUpdatedISO);
+
+          setSyncStatus('synced');
+          isInitialLoadDoneRef.current = true;
+          setTimeout(() => {
+            isRemoteSyncRef.current = false;
+          }, 150);
+        } else {
+          // O documento ainda não existe na nuvem OU o cache local é mais novo -> envia para a nuvem
+          const nowIso = cached.lastUpdatedISO || new Date().toISOString();
+          isRemoteSyncRef.current = false;
+          saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
+            data: cached.data,
+            lastUpdatedISO: nowIso,
+          })
+            .then(() => {
+              setSyncStatus('synced');
+              isInitialLoadDoneRef.current = true;
+            })
+            .catch(() => {
+              setSyncStatus('offline');
+              isInitialLoadDoneRef.current = true;
+            });
+        }
+      },
+      () => {
+        // Se estiver sem internet ou sem permissão, opera em modo local sem travar
+        isRemoteSyncRef.current = false;
+        setSyncStatus('offline');
+        isInitialLoadDoneRef.current = true;
       }
-    });
-    return () => unsubAuth();
+    );
+
+    return () => unsubscribe();
   }, []);
 
-  // Attach real-time Firestore listener when authenticated
+  // EFEITO 2: Salvar automaticamente (Debounce de 500ms) quando o usuário edita algo
   useEffect(() => {
-    if (!authReady || !user) return;
+    // Não salva de volta na nuvem se a mudança veio da própria nuvem ou antes de terminar o load inicial
+    if (isRemoteSyncRef.current || !isInitialLoadDoneRef.current) {
+      return;
+    }
 
-    let unsubSnapshot: (() => void) | undefined;
-    let isMounted = true;
+    const nowIso = new Date().toISOString();
 
-    async function initCloudSync() {
+    // Salva imediatamente no localStorage com o novo timestamp
+    saveToLocalStorage(records, nowIso);
+
+    setSyncStatus('saving');
+    const timer = setTimeout(async () => {
       try {
-        await seedInitialChecklistsIfNeeded(SEED_CHECKLISTS);
-        if (!isMounted) return;
-        unsubSnapshot = subscribeToPlantChecklists(
-          (cloudRecords) => {
-            if (!isMounted) return;
-            if (cloudRecords.length > 0) {
-              setRecords(cloudRecords);
-            }
-            setIsCloudSynced(true);
-          },
-          () => {
-            if (isMounted) setIsCloudSynced(false);
-          }
-        );
-      } catch (err) {
-        console.error('Failed to initialize cloud sync:', err);
+        await saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
+          data: records,
+          lastUpdatedISO: nowIso,
+        });
+        setSyncStatus('synced');
+      } catch (error) {
+        console.warn('Falha ao salvar no Firestore:', error);
+        setSyncStatus('offline');
       }
-    }
+    }, 500);
 
-    initCloudSync();
-
-    return () => {
-      isMounted = false;
-      if (unsubSnapshot) unsubSnapshot();
-    };
-  }, [authReady, user]);
-
-  // Keep local storage cache updated as offline backup
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-    } catch (e) {
-      console.error('Failed to save records locally', e);
-    }
+    return () => clearTimeout(timer);
   }, [records]);
 
-  const handleSignIn = async () => {
-    try {
-      setCloudNotice(null);
-      await signInWithGoogle();
-    } catch (err) {
-      console.error('Google Sign-In error:', err);
-      setCloudNotice('Não foi possível concluir o login com Google. Verifique se pop-ups estão permitidos.');
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await signOutUser();
-      setIsCloudSynced(false);
-    } catch (err) {
-      console.error('Sign-Out error:', err);
-    }
-  };
-
   // Handle adding new record
-  const handleSaveRecord = async (newRec: ChecklistRecord) => {
+  const handleSaveRecord = (newRec: ChecklistRecord) => {
     setRecords((prev) => [newRec, ...prev]);
     setSelectedReactorId(newRec.reactorId);
-
-    if (user) {
-      try {
-        await saveChecklistRecordToFirestore(newRec);
-      } catch (err) {
-        console.error('Failed to save checklist to Firestore:', err);
-      }
-    } else {
-      setCloudNotice(
-        'Checklist salvo localmente neste dispositivo. Clique em "Sincronizar Nuvem" para compartilhar em tempo real com toda a equipe.'
-      );
-    }
   };
 
   // Handle deleting record
-  const handleDeleteRecord = async (id: string) => {
+  const handleDeleteRecord = (id: string) => {
     setRecords((prev) => prev.filter((r) => r.id !== id));
-    if (user) {
-      try {
-        await deleteChecklistFromFirestore(id);
-      } catch (err) {
-        console.error('Failed to delete checklist from Firestore:', err);
-      }
-    }
   };
 
   // Handle archiving / unarchiving a batch
-  const handleToggleArchiveBatch = async (batchId: string, reactorId: number, archive: boolean) => {
-    const affectedRecords = records.filter(
-      (r) => r.reactorId === reactorId && (r.batchId || 'Lote Padrão') === batchId
-    );
-
+  const handleToggleArchiveBatch = (batchId: string, reactorId: number, archive: boolean) => {
     setRecords((prev) =>
       prev.map((r) => {
         if (r.reactorId === reactorId && (r.batchId || 'Lote Padrão') === batchId) {
@@ -187,27 +199,11 @@ export default function App() {
         return r;
       })
     );
-
-    if (user && affectedRecords.length > 0) {
-      try {
-        await toggleBatchArchiveInFirestore(affectedRecords, archive);
-      } catch (err) {
-        console.error('Failed to toggle archive batch in Firestore:', err);
-      }
-    }
   };
 
-  const handleResetData = async () => {
+  const handleResetData = () => {
     setRecords(SEED_CHECKLISTS);
     setSelectedReactorId(2);
-    localStorage.removeItem(STORAGE_KEY);
-    if (user) {
-      try {
-        await resetCloudChecklistsToSeed(SEED_CHECKLISTS);
-      } catch (err) {
-        console.error('Failed to reset cloud data:', err);
-      }
-    }
   };
 
   const handleOpenChecklistForReactor = (reactorId: number) => {
@@ -278,56 +274,9 @@ export default function App() {
         onOpenDORefModal={() => setIsDORefModalOpen(true)}
         activeSection={activeSection}
         onNavigate={setActiveSection}
-        user={user}
-        isCloudSynced={isCloudSynced}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
       />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
-        {/* Cloud Synchronization Status Banner */}
-        {!user ? (
-          <div className="bg-cyan-950/30 border border-cyan-500/40 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 text-xs text-slate-200">
-              <Cloud className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>
-                <strong className="text-cyan-300">Sincronização Multi-Usuário (Firebase Cloud):</strong> Conecte sua conta Google para que todos os operadores e gestores com o link aberto visualizem os lançamentos simultaneamente em tempo real.
-              </span>
-            </div>
-            <button
-              onClick={handleSignIn}
-              className="px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap self-start sm:self-auto"
-            >
-              <LogIn className="w-3.5 h-3.5 stroke-[2.5]" />
-              Entrar com Google
-            </button>
-          </div>
-        ) : (
-          cloudNotice && (
-            <div className="bg-amber-950/40 border border-amber-500/50 rounded-xl px-4 py-2.5 text-xs text-amber-200 flex items-center justify-between">
-              <span>{cloudNotice}</span>
-              <button
-                onClick={() => setCloudNotice(null)}
-                className="text-amber-400 hover:text-amber-200 font-semibold ml-4"
-              >
-                Fechar
-              </button>
-            </div>
-          )
-        )}
-
-        {!user && cloudNotice && (
-          <div className="bg-amber-950/40 border border-amber-500/50 rounded-xl px-4 py-2.5 text-xs text-amber-200 flex items-center justify-between">
-            <span>{cloudNotice}</span>
-            <button
-              onClick={handleSignIn}
-              className="text-cyan-300 hover:text-cyan-200 font-semibold ml-4 underline whitespace-nowrap"
-            >
-              Sincronizar Agora
-            </button>
-          </div>
-        )}
-
         {/* Banner with Context & Quick Filter */}
         <div className="bg-[#0F1624] border border-slate-800/90 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -341,12 +290,6 @@ export default function App() {
               <span className="text-xs font-mono text-cyan-400 font-semibold">
                 · Escala {activeScale}
               </span>
-              {user && isCloudSynced && (
-                <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1 ml-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
-                  Tempo Real Ativo
-                </span>
-              )}
             </div>
             <p className="text-xs text-slate-400 mt-1.5">
               Planta de bioprocesso: 16 reatores (1-5: 100L · 6-10: 500L · 11-14: 5000L · 15-16: 3000L). Controle por semáforo de cores, médias e histórico inteligente por lotes.
@@ -601,9 +544,9 @@ export default function App() {
         {/* Quiet Footer with data management & GMP disclaimer */}
         <footer className="pt-6 border-t border-slate-800/80 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span>BioTrack · Sistema de Monitoramento e Rastreabilidade de Biorreatores Industriais</span>
+            <span>Checklist Parâmetros de Processo · Monitoramento e Rastreabilidade de Biorreatores</span>
             <span>·</span>
-            <span>GMP / BPF Compliant · Sincronização Firebase Cloud</span>
+            <span>GMP / BPF Compliant</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -624,7 +567,6 @@ export default function App() {
         onClose={() => setIsChecklistOpen(false)}
         onSave={handleSaveRecord}
         initialReactorId={checklistPresetReactorId}
-        defaultOperatorName={user?.displayName || undefined}
       />
 
       <PDFReportModal

@@ -12,7 +12,7 @@ export interface PDFReportOptions {
 }
 
 export function generateBioreactorPDFReport(options: PDFReportOptions): jsPDF {
-  const { reactor, records, title, generatedBy = 'Sistema BioTrack' } = options;
+  const { reactor, records, title, generatedBy = 'Checklist Parâmetros de Processo' } = options;
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -28,9 +28,9 @@ export function generateBioreactorPDFReport(options: PDFReportOptions): jsPDF {
   doc.rect(0, 0, 210, 26, 'F');
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('BIOTRACK · RELATÓRIO DE MONITORAMENTO E RASTREABILIDADE', 14, 12);
+  doc.text('CHECKLIST PARÂMETROS DE PROCESSO · RASTREABILIDADE', 14, 12);
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
@@ -296,7 +296,7 @@ export function generateBioreactorPDFReport(options: PDFReportOptions): jsPDF {
     doc.setFontSize(6.5);
     doc.setTextColor(148, 163, 184);
     doc.text(
-      `BioTrack GMP · Documento gerado eletronicamente para fins de auditoria e rastreabilidade · Página ${i} de ${pageCount}`,
+      `Checklist Parâmetros de Processo GMP · Documento gerado eletronicamente para fins de auditoria e rastreabilidade · Página ${i} de ${pageCount}`,
       105,
       290,
       { align: 'center' }
@@ -309,6 +309,6 @@ export function generateBioreactorPDFReport(options: PDFReportOptions): jsPDF {
 export function downloadBioreactorPDF(options: PDFReportOptions, filename?: string) {
   const doc = generateBioreactorPDFReport(options);
   const reactorTag = options.reactor ? options.reactor.tag : 'TODOS';
-  const fname = filename || `Relatorio_BioTrack_${reactorTag}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  const fname = filename || `Relatorio_Checklist_Parametros_Processo_${reactorTag}_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(fname);
 }
