@@ -238,6 +238,7 @@ export default function App() {
   // Modals
   const [isChecklistOpen, setIsChecklistOpen] = useState<boolean>(false);
   const [checklistPresetReactorId, setChecklistPresetReactorId] = useState<number>(1);
+  const [editingRecord, setEditingRecord] = useState<ChecklistRecord | null>(null);
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [isDORefModalOpen, setIsDORefModalOpen] = useState<boolean>(false);
 
@@ -353,10 +354,24 @@ export default function App() {
     });
   };
 
-  // Handle adding new record
-  const handleSaveRecord = (newRec: ChecklistRecord) => {
-    setRecords((prev) => [newRec, ...prev]);
-    setSelectedReactorId(newRec.reactorId);
+  // Handle adding or updating a record
+  const handleSaveRecord = (savedRec: ChecklistRecord) => {
+    setRecords((prev) => {
+      const exists = prev.some((r) => r.id === savedRec.id);
+      if (exists) {
+        return prev.map((r) => (r.id === savedRec.id ? savedRec : r));
+      }
+      return [savedRec, ...prev];
+    });
+    setEditingRecord(null);
+    setSelectedReactorId(savedRec.reactorId);
+  };
+
+  // Handle opening modal to edit an existing record
+  const handleEditRecord = (record: ChecklistRecord) => {
+    setEditingRecord(record);
+    setChecklistPresetReactorId(record.reactorId);
+    setIsChecklistOpen(true);
   };
 
   // Handle deleting record
@@ -383,6 +398,7 @@ export default function App() {
   };
 
   const handleOpenChecklistForReactor = (reactorId: number) => {
+    setEditingRecord(null);
     setChecklistPresetReactorId(reactorId);
     setIsChecklistOpen(true);
   };
@@ -718,6 +734,7 @@ export default function App() {
           <TraceabilityTable
             records={records}
             onDeleteRecord={handleDeleteRecord}
+            onEditRecord={handleEditRecord}
             onToggleArchiveBatch={handleToggleArchiveBatch}
             onOpenPDFModal={() => setIsPDFModalOpen(true)}
             selectedReactorId={selectedReactorId}
@@ -748,12 +765,16 @@ export default function App() {
       {/* Modals */}
       <ChecklistModal
         isOpen={isChecklistOpen}
-        onClose={() => setIsChecklistOpen(false)}
+        onClose={() => {
+          setIsChecklistOpen(false);
+          setEditingRecord(null);
+        }}
         onSave={handleSaveRecord}
         initialReactorId={checklistPresetReactorId}
         operators={operators}
         onAddOperator={handleAddOperator}
         existingRecords={records}
+        editingRecord={editingRecord}
       />
 
       <PDFReportModal

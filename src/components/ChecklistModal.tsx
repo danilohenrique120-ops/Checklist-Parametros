@@ -27,6 +27,7 @@ interface ChecklistModalProps {
   operators?: string[];
   onAddOperator?: (newOperator: string) => void;
   existingRecords?: ChecklistRecord[];
+  editingRecord?: ChecklistRecord | null;
 }
 
 function getLocalDateYYYYMMDD(d: Date = new Date()): string {
@@ -66,6 +67,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   operators = INITIAL_OPERATORS,
   onAddOperator,
   existingRecords = [],
+  editingRecord = null,
 }) => {
   const [reactorId, setReactorId] = useState<number>(initialReactorId);
   const [operatorName, setOperatorName] = useState<string>(operators[0] || INITIAL_OPERATORS[0]);
@@ -126,13 +128,49 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     };
   };
 
-  // Sempre que o modal abrir, atualiza Data e Horário para o momento atual exato
+  // Sempre que o modal abrir, preenche os dados do registro em edição OU configura um novo registro com data/hora atual
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) return;
+
+    if (editingRecord) {
+      setReactorId(editingRecord.reactorId);
+      setOperatorName(editingRecord.operatorName);
+      setIsCustomOperatorMode(false);
+      setCustomOperatorInput('');
+      setDate(editingRecord.date);
+      setTime(editingRecord.time);
+
+      if (editingRecord.inoculationDate && editingRecord.inoculationTime) {
+        setInoculationDate(editingRecord.inoculationDate);
+        setInoculationTime(editingRecord.inoculationTime);
+      } else {
+        const recTs = editingRecord.timestamp || Date.now();
+        const estInoc = new Date(recTs - (editingRecord.processHours || 0) * 3600 * 1000);
+        setInoculationDate(getLocalDateYYYYMMDD(estInoc));
+        setInoculationTime(getLocalTimeHHMM(estInoc));
+      }
+
+      setBatchId(editingRecord.batchId || '');
+      setTemperature(editingRecord.temperature);
+      setDissolvedOxygen(editingRecord.dissolvedOxygen);
+      setAgitation(editingRecord.agitation);
+      setPressure(editingRecord.pressure);
+      setAirflow(editingRecord.airflow);
+      setNotes(editingRecord.notes || '');
+      setErrorMsg('');
+    } else {
       const now = new Date();
       setDate(getLocalDateYYYYMMDD(now));
       setTime(getLocalTimeHHMM(now));
       setReactorId(initialReactorId);
+
+      const sc = getScaleByReactorId(initialReactorId);
+      const sp = SCALE_SPECS[sc];
+      setTemperature(30.0);
+      setDissolvedOxygen(21.0);
+      setAgitation(sp.agitation.target);
+      setPressure(sp.pressure.target);
+      setAirflow(sp.airflow.target);
 
       const resolved = resolveInoculationForReactor(initialReactorId, now);
       setInoculationDate(resolved.inocDate);
@@ -141,13 +179,18 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       setNotes('');
       setErrorMsg('');
     }
-  }, [isOpen, initialReactorId]);
+  }, [isOpen, initialReactorId, editingRecord]);
 
   useEffect(() => {
-    if (!operators.includes(operatorName) && operators.length > 0 && !isCustomOperatorMode) {
+    if (
+      !editingRecord &&
+      !operators.includes(operatorName) &&
+      operators.length > 0 &&
+      !isCustomOperatorMode
+    ) {
       setOperatorName(operators[0]);
     }
-  }, [operators, operatorName, isCustomOperatorMode]);
+  }, [operators, operatorName, isCustomOperatorMode, editingRecord]);
 
   // Quando o operador troca o biorreator dentro do modal aberto, atualiza alvos e inoculação do tanque
   const handleReactorChange = (newReactorId: number) => {
@@ -166,15 +209,6 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     setBatchId(resolved.batch);
     setErrorMsg('');
   };
-
-  // Atualiza parâmetros padrão quando reactorId muda via prop inicial
-  useEffect(() => {
-    const sc = getScaleByReactorId(reactorId);
-    const sp = SCALE_SPECS[sc];
-    setAgitation(sp.agitation.target);
-    setPressure(sp.pressure.target);
-    setAirflow(sp.airflow.target);
-  }, [reactorId]);
 
   if (!isOpen) return null;
 
@@ -317,7 +351,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     }
 
     const newRecord: ChecklistRecord = {
-      id: `chk-${Date.now()}`,
+      id: editingRecord ? editingRecord.id : `chk-${Date.now()}`,
       reactorId,
       reactorTag: `BR-${String(reactorId).padStart(2, '0')}`,
       scale,
@@ -329,7 +363,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       inoculationDate,
       inoculationTime,
       processHours,
-      archived: false,
+      archived: editingRecord ? Boolean(editingRecord.archived) : false,
       temperature,
       dissolvedOxygen,
       agitation,
@@ -364,7 +398,9 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold tracking-tight">
-                Novo Checklist de Parâmetros de Biorreator
+                {editingRecord
+                  ? `Editar Checklist · ${editingRecord.reactorTag} (${editingRecord.date.split('-').reverse().slice(0, 2).join('/')} ${editingRecord.time})`
+                  : 'Novo Checklist de Parâmetros de Biorreator'}
               </h2>
               <p className="text-xs text-slate-400">
                 Sinalização visual inteligente por cores (Verde: Nominal · Amarelo: Borda · Vermelho: Fora da Faixa)
@@ -833,7 +869,11 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 }`}
               >
                 <Check className="w-4 h-4 stroke-[2.5]" />
-                {validation.isFullyNominal ? 'Salvar Checklist Nominal' : 'Registrar com Desvio Justificado'}
+                {editingRecord
+                  ? 'Salvar Alterações do Checklist'
+                  : validation.isFullyNominal
+                  ? 'Salvar Checklist Nominal'
+                  : 'Registrar com Desvio Justificado'}
               </button>
             </div>
           </div>

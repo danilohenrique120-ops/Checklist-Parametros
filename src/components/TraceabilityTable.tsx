@@ -15,11 +15,13 @@ import {
   Layers,
   List,
   ChevronLeft,
+  Pencil,
 } from 'lucide-react';
 
 interface TraceabilityTableProps {
   records: ChecklistRecord[];
   onDeleteRecord: (id: string) => void;
+  onEditRecord?: (record: ChecklistRecord) => void;
   onToggleArchiveBatch: (batchId: string, reactorId: number, archive: boolean) => void;
   onOpenPDFModal: () => void;
   selectedReactorId: number | 'all';
@@ -48,6 +50,7 @@ interface BatchGroup {
 export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
   records,
   onDeleteRecord,
+  onEditRecord,
   onToggleArchiveBatch,
   onOpenPDFModal,
   selectedReactorId,
@@ -304,6 +307,15 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               >
                 <Eye className="w-3.5 h-3.5" />
               </button>
+              {onEditRecord && (
+                <button
+                  title="Editar checklist"
+                  onClick={() => onEditRecord(r)}
+                  className="p-1 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              )}
               {pendingDeleteId === r.id ? (
                 <button
                   onClick={() => {
@@ -816,7 +828,20 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex justify-end gap-2">
+              {onEditRecord && (
+                <button
+                  onClick={() => {
+                    const recToEdit = selectedRecordForDetail;
+                    setSelectedRecordForDetail(null);
+                    onEditRecord(recToEdit);
+                  }}
+                  className="px-4 py-1.5 text-xs font-semibold text-amber-300 bg-amber-950/50 border border-amber-700/60 hover:bg-amber-900/60 rounded-lg flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Editar Checklist
+                </button>
+              )}
               <button
                 onClick={() => setSelectedRecordForDetail(null)}
                 className="px-4 py-1.5 text-xs font-semibold text-slate-200 bg-[#131C2E] border border-slate-700 hover:bg-slate-800 rounded-lg"

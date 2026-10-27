@@ -116,54 +116,75 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       ? records
       : records.filter((r) => (r.batchId || 'Lote Padrão') === effectiveBatchFilter);
 
-  // Compute effective cultivation hours for each record and ensure chronological ordering
-  const getEffectiveHours = (r: ChecklistRecord): number => {
-    if (r.inoculationDate && r.inoculationTime && r.date && r.time) {
-      const inocTs = new Date(`${r.inoculationDate}T${r.inoculationTime}:00`).getTime();
-      const checkTs = new Date(`${r.date}T${r.time}:00`).getTime();
-      if (!isNaN(inocTs) && !isNaN(checkTs) && checkTs >= inocTs) {
-        return Number(((checkTs - inocTs) / (1000 * 60 * 60)).toFixed(2));
-      }
+  // Helper: timestamp real do lançamento do check (data + horário registrado)
+  const getRecordCheckTimestamp = (r: ChecklistRecord): number => {
+    if (r.date && r.time) {
+      const ts = new Date(`${r.date}T${r.time}:00`).getTime();
+      if (!isNaN(ts)) return ts;
     }
-    return typeof r.processHours === 'number' && !isNaN(r.processHours) ? r.processHours : 0;
+    return r.timestamp || 0;
   };
 
-  // Sort records by effective hours then timestamp
+  // Helper: deslocamento em horas a partir das 06:00 do relógio (06:00 -> 0h, 08:00 -> 2h, 10:00 -> 4h, 00:00 -> 18h)
+  const getClockOffsetFrom06 = (r: ChecklistRecord): number => {
+    const [hhStr, mmStr] = (r.time || '06:00').split(':');
+    const hh = Number(hhStr);
+    const mm = Number(mmStr);
+    const validH = !isNaN(hh) ? hh : 6;
+    const validM = !isNaN(mm) ? mm : 0;
+    return ((validH - 6 + 24) % 24) + validM / 60;
+  };
+
+  // Helper: chave do dia operacional (cada ciclo de 24h do gráfico inicia às 06:00)
+  const getOperationalDayKey = (r: ChecklistRecord): string => {
+    if (!r.date) return 'default-day';
+    const [y, m, d] = r.date.split('-').map(Number);
+    const [hh] = (r.time || '06:00').split(':').map(Number);
+    if (!y || !m || !d) return r.date;
+    const dt = new Date(y, m - 1, d, 12, 0, 0);
+    if (!isNaN(hh) && hh < 6) {
+      dt.setDate(dt.getDate() - 1);
+    }
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+
+  // Ordena os registros cronologicamente pela data e horário em que o check foi lançado
   const rawSorted = [...filteredByBatch].sort((a, b) => {
-    const ha = getEffectiveHours(a);
-    const hb = getEffectiveHours(b);
-    if (Math.abs(ha - hb) > 0.01) return ha - hb;
-    return a.timestamp - b.timestamp;
+    const ta = getRecordCheckTimestamp(a);
+    const tb = getRecordCheckTimestamp(b);
+    if (ta !== tb) return ta - tb;
+    return a.processHours - b.processHours;
   });
 
-  // Ensure every checklist registered at a different time has a distinct X position (plotHours)
-  // so two checklists on the same tank at different times never overlap on the same coordinate
-  const plottedRecords: { record: ChecklistRecord; plotHours: number }[] = [];
+  // Dias operacionais presentes no filtro atual para posicionar cada check exatamente no horário do relógio em que foi lançado
+  const uniqueOpDays = Array.from(new Set(rawSorted.map(getOperationalDayKey)));
+
+  // Posiciona cada ponto no eixo X pelo horário real em que o check foi lançado (e não pelas horas de cultivo processHours)
+  const plottedRecords: {
+    record: ChecklistRecord;
+    plotHours: number;
+    baseClockHour: number;
+  }[] = [];
+
   rawSorted.forEach((rec, idx) => {
-    let h = getEffectiveHours(rec);
+    const dayIdx = Math.max(0, uniqueOpDays.indexOf(getOperationalDayKey(rec)));
+    const baseClockHour = Number((dayIdx * 24 + getClockOffsetFrom06(rec)).toFixed(2));
+    let plotH = baseClockHour;
 
     if (idx > 0) {
       const prev = plottedRecords[idx - 1];
-      // If two records on the same reactor had identical processHours (e.g. legacy 24h) but different timestamps,
-      // derive the hour difference from their actual check timestamps
-      if (
-        rec.reactorId === prev.record.reactorId &&
-        Math.abs(h - getEffectiveHours(prev.record)) < 0.05 &&
-        rec.timestamp > prev.record.timestamp
-      ) {
-        const diffFromTimestamp = (rec.timestamp - prev.record.timestamp) / (1000 * 60 * 60);
-        if (diffFromTimestamp > 0 && diffFromTimestamp <= 72) {
-          h = Number((prev.plotHours + diffFromTimestamp).toFixed(2));
-        }
-      }
-
-      // Guarantee a minimum horizontal visual separation so no two distinct readings ever sit on top of each other
-      if (h <= prev.plotHours + 0.45) {
-        h = Number((prev.plotHours + 0.75).toFixed(2));
+      // Se dois checks foram lançados com poucos minutos de diferença no mesmo horário,
+      // aplica um leve espaçamento mínimo visual (0.35h) para que ambos os pontos fiquem visíveis lado a lado no mesmo horário
+      if (plotH <= prev.plotHours + 0.32) {
+        plotH = Number((prev.plotHours + 0.35).toFixed(2));
       }
     }
 
-    plottedRecords.push({ record: rec, plotHours: Math.max(0, h) });
+    plottedRecords.push({
+      record: rec,
+      plotHours: Math.max(0, plotH),
+      baseClockHour: Math.max(0, baseClockHour),
+    });
   });
 
   const sortedRecords = plottedRecords.map((item) => item.record);
@@ -737,7 +758,14 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           {twoHourTicks.map((h) => {
             const x = scaleX(h);
             const clockTime = getClockTimeForHour(h);
-            const hasPointAtHour = plottedRecords.some((item) => Math.abs(item.plotHours - h) < 0.6);
+            const hasPointAtHour = plottedRecords.some(
+              (item) => Math.round(item.baseClockHour / 2) * 2 === h
+            );
+            const dayIdx = Math.floor(h / 24);
+            const opDayStr = uniqueOpDays[dayIdx];
+            const daySubLabel = opDayStr && opDayStr !== 'default-day'
+              ? opDayStr.split('-').reverse().slice(0, 2).join('/')
+              : `Dia ${dayIdx + 1}`;
 
             return (
               <g key={h}>
@@ -749,7 +777,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                   stroke={hasPointAtHour ? '#38BDF8' : '#475569'}
                   strokeWidth={hasPointAtHour ? '1.5' : '1'}
                 />
-                {/* Horário Cheio (06:00, 08:00, 10:00...) */}
+                {/* Horário Cheio do Relógio (06:00, 08:00, 10:00...) */}
                 <text
                   x={x}
                   y={padding.top + chartH + 17}
@@ -760,16 +788,16 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 >
                   {clockTime}
                 </text>
-                {/* Horas de Processo (2h, 4h, 6h...) */}
+                {/* Data / Dia do Lançamento */}
                 <text
                   x={x}
                   y={padding.top + chartH + 29}
                   textAnchor="middle"
-                  fontSize="8"
+                  fontSize="7.5"
                   fill={hasPointAtHour ? '#38BDF8' : '#475569'}
                   fontWeight={hasPointAtHour ? '600' : '400'}
                 >
-                  {h}h
+                  {daySubLabel}
                 </text>
               </g>
             );
@@ -782,7 +810,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             fontWeight="600"
             fill="#94A3B8"
           >
-            Horários Ponto a Ponto (A cada 2 horas · Horários Cheios 06:00, 08:00, 10:00... / Tempo de Cultivo)
+            Horário de Lançamento do Check (A cada 2 horas · Horários Cheios 06:00, 08:00, 10:00...)
           </text>
 
           {/* Y-Axis Labels */}
