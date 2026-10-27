@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { ChecklistRecord, ScaleVolume } from '../types/bioreactor';
-import { DO_REFERENCE_100L, DO_REFERENCE_5000L, SCALE_SPECS, getDOPhaseForHours } from '../constants/reactorConfig';
+import { DO_REFERENCE_100L, DO_REFERENCE_5000L, REACTORS, SCALE_SPECS, getDOPhaseForHours } from '../constants/reactorConfig';
 import { AlertTriangle, Info } from 'lucide-react';
 
 interface InteractiveChartsProps {
   records: ChecklistRecord[];
   scale: ScaleVolume;
+  selectedScale: ScaleVolume | 'all';
+  onSelectScale: (scale: ScaleVolume | 'all') => void;
   selectedReactorId: number | 'all';
+  onSelectReactor: (reactorId: number | 'all') => void;
   onSelectRecord?: (record: ChecklistRecord) => void;
   onOpenDORefModal: () => void;
 }
@@ -89,7 +92,10 @@ const PARAM_CONFIGS: Record<ParameterKey, ParamConfig> = {
 export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   records,
   scale,
+  selectedScale,
+  onSelectScale,
   selectedReactorId,
+  onSelectReactor,
   onOpenDORefModal,
 }) => {
   const [activeTab, setActiveTab] = useState<ParameterKey>('temperature');
@@ -111,10 +117,15 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       ? selectedBatchFilter
       : 'all';
 
-  const filteredByBatch =
+  const baseFilteredByBatch =
     effectiveBatchFilter === 'all'
       ? records
       : records.filter((r) => (r.batchId || 'Lote Padrão') === effectiveBatchFilter);
+
+  const filteredByBatch =
+    activeTab === 'dissolvedOxygen'
+      ? baseFilteredByBatch.filter((r) => !r.noDOProbe)
+      : baseFilteredByBatch;
 
   // Helper: timestamp real do lançamento do check (data + horário registrado)
   const getRecordCheckTimestamp = (r: ChecklistRecord): number => {
@@ -301,40 +312,25 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   return (
     <div className="bg-[#0F1624] border border-slate-800/90 rounded-xl p-5">
       {/* Top Header & Tabs */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 mb-4">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-base font-semibold text-slate-100 tracking-tight">
-              Monitoramento de Tendências & Tolerâncias (A cada 2 Horas)
-            </h2>
-            <span className="text-xs font-mono text-cyan-400">
-              · Escala {scale} {selectedReactorId !== 'all' ? `· BR-${String(selectedReactorId).padStart(2, '0')}` : '· Todos'}
-            </span>
+      <div className="flex flex-col gap-3.5 border-b border-slate-800/80 pb-4 mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base font-semibold text-slate-100 tracking-tight">
+                Monitoramento de Tendências & Tolerâncias (A cada 2 Horas)
+              </h2>
+              <span className="text-xs font-mono text-cyan-400">
+                · {selectedScale === 'all' && selectedReactorId === 'all' ? `Ref. Escala ${scale}` : `Escala ${scale}`}{' '}
+                {selectedReactorId !== 'all' ? `· BR-${String(selectedReactorId).padStart(2, '0')}` : '· Todos os Tanques'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Acompanhamento ponto a ponto de 2 em 2 horas (horários cheios) com linhas de limites mínimo/máximo e média
+            </p>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Acompanhamento ponto a ponto de 2 em 2 horas (horários cheios) com linhas de limites mínimo/máximo e média
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {availableBatches.length > 1 && (
-            <select
-              value={effectiveBatchFilter}
-              onChange={(e) => setSelectedBatchFilter(e.target.value)}
-              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-              title="Filtrar por lote no gráfico"
-            >
-              <option value="all">Todos os Lotes ({records.length})</option>
-              {availableBatches.map((b) => (
-                <option key={b} value={b}>
-                  Lote {b}
-                </option>
-              ))}
-            </select>
-          )}
 
           {/* Tab Buttons */}
-          <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg overflow-x-auto">
+          <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg overflow-x-auto self-start lg:self-auto">
             {(Object.keys(PARAM_CONFIGS) as ParameterKey[]).map((key) => {
               const cfg = PARAM_CONFIGS[key];
               const isActive = activeTab === key;
@@ -353,6 +349,104 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
               );
             })}
           </div>
+        </div>
+
+        {/* Filter Bar Above the Chart: Escala + Tanque + Lote */}
+        <div className="flex flex-wrap items-center gap-2.5 pt-1">
+          <div className="flex items-center gap-1.5">
+            <label className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
+              Escala:
+            </label>
+            <select
+              value={selectedScale}
+              onChange={(e) => onSelectScale(e.target.value as ScaleVolume | 'all')}
+              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 font-semibold"
+              title="Filtrar gráfico por escala"
+            >
+              <option value="all">Todas as Escalas</option>
+              <option value="100L">Escala 100L (Tanques 1 ao 5)</option>
+              <option value="500L">Escala 500L (Tanques 6 ao 10)</option>
+              <option value="5000L">Escala 5000L (Tanques 11 ao 14)</option>
+              <option value="3000L">Escala 3000L (Tanques 15 e 16)</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <label className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
+              Tanque:
+            </label>
+            <select
+              value={selectedReactorId}
+              onChange={(e) =>
+                onSelectReactor(e.target.value === 'all' ? 'all' : Number(e.target.value))
+              }
+              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 font-semibold"
+              title="Filtrar gráfico por tanque"
+            >
+              <option value="all">
+                {selectedScale === 'all'
+                  ? 'Todos os Tanques (1 ao 16)'
+                  : `Todos os Tanques (${selectedScale})`}
+              </option>
+              {(selectedScale === 'all' || selectedScale === '100L') && (
+                <optgroup label="100L (Tanques 1 ao 5)">
+                  {REACTORS.filter((r) => r.scale === '100L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(selectedScale === 'all' || selectedScale === '500L') && (
+                <optgroup label="500L (Tanques 6 ao 10)">
+                  {REACTORS.filter((r) => r.scale === '500L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(selectedScale === 'all' || selectedScale === '5000L') && (
+                <optgroup label="5000L (Tanques 11 ao 14)">
+                  {REACTORS.filter((r) => r.scale === '5000L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(selectedScale === 'all' || selectedScale === '3000L') && (
+                <optgroup label="3000L (Tanques 15 e 16)">
+                  {REACTORS.filter((r) => r.scale === '3000L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+
+          {availableBatches.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <label className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
+                Lote:
+              </label>
+              <select
+                value={effectiveBatchFilter}
+                onChange={(e) => setSelectedBatchFilter(e.target.value)}
+                className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                title="Filtrar por lote no gráfico"
+              >
+                <option value="all">Todos os Lotes ({records.length})</option>
+                {availableBatches.map((b) => (
+                  <option key={b} value={b}>
+                    Lote {b}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 

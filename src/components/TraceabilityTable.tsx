@@ -122,6 +122,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
         const v = validateChecklistValues(item.scale, {
           temperature: item.temperature,
           dissolvedOxygen: item.dissolvedOxygen,
+          noDOProbe: item.noDOProbe,
           standardCurveO2: item.standardCurveO2,
           agitation: item.agitation,
           pressure: item.pressure,
@@ -133,7 +134,11 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
 
       const n = sorted.length;
       const avgTemp = sorted.reduce((acc, item) => acc + item.temperature, 0) / n;
-      const avgO2 = sorted.reduce((acc, item) => acc + item.dissolvedOxygen, 0) / n;
+      const withProbe = sorted.filter((item) => !item.noDOProbe);
+      const avgO2 =
+        withProbe.length > 0
+          ? withProbe.reduce((acc, item) => acc + item.dissolvedOxygen, 0) / withProbe.length
+          : 0;
       const avgPress = sorted.reduce((acc, item) => acc + item.pressure, 0) / n;
       const avgAir = sorted.reduce((acc, item) => acc + item.airflow, 0) / n;
 
@@ -203,6 +208,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
       const valCheck = validateChecklistValues(r.scale, {
         temperature: r.temperature,
         dissolvedOxygen: r.dissolvedOxygen,
+        noDOProbe: r.noDOProbe,
         standardCurveO2: r.standardCurveO2,
         agitation: r.agitation,
         pressure: r.pressure,
@@ -256,7 +262,11 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
 
           {/* Dissolved Oxygen */}
           <td className={`py-2 px-2.5 text-right whitespace-nowrap ${getCellSemaphoreStyle(valCheck.doSemaphore)}`}>
-            {r.dissolvedOxygen.toFixed(2)}%
+            {r.noDOProbe ? (
+              <span className="text-[11px] font-sans text-slate-400 italic">Sem sonda</span>
+            ) : (
+              `${r.dissolvedOxygen.toFixed(2)}%`
+            )}
           </td>
 
           {/* Agitation */}
@@ -779,7 +789,11 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Oxigênio Dissolvido:</span>
-                  <span className="font-bold text-slate-100">{selectedRecordForDetail.dissolvedOxygen}%</span>
+                  <span className="font-bold text-slate-100">
+                    {selectedRecordForDetail.noDOProbe
+                      ? 'Sem sonda (Isento)'
+                      : `${selectedRecordForDetail.dissolvedOxygen}%`}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Agitação:</span>

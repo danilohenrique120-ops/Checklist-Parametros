@@ -131,6 +131,7 @@ function revalidateRecordList(list: ChecklistRecord[]): ChecklistRecord[] {
     const v = validateChecklistValues(scale, {
       temperature: rec.temperature,
       dissolvedOxygen: rec.dissolvedOxygen,
+      noDOProbe: rec.noDOProbe,
       standardCurveO2: rec.standardCurveO2,
       agitation: rec.agitation,
       pressure: rec.pressure,
@@ -230,7 +231,8 @@ export default function App() {
   const isRemoteSyncRef = useRef<boolean>(false);
   const isInitialLoadDoneRef = useRef<boolean>(false);
 
-  // Inicia filtrado em TODOS os biorreatores ('all')
+  // Inicia filtrado em TODAS as escalas e TODOS os biorreatores ('all')
+  const [selectedScale, setSelectedScale] = useState<ScaleVolume | 'all'>('all');
   const [selectedReactorId, setSelectedReactorId] = useState<number | 'all'>('all');
   const [activeSection, setActiveSection] = useState<'dashboard' | 'averages' | 'trends' | 'table'>('dashboard');
   const [complianceScope, setComplianceScope] = useState<'all' | 'selected'>('all');
@@ -394,7 +396,28 @@ export default function App() {
   const handleResetData = () => {
     setRecords(SEED_CHECKLISTS);
     setOperators([...INITIAL_OPERATORS]);
+    setSelectedScale('all');
     setSelectedReactorId('all');
+  };
+
+  const handleSelectScale = (newScale: ScaleVolume | 'all') => {
+    setSelectedScale(newScale);
+    if (newScale !== 'all' && selectedReactorId !== 'all') {
+      const currentTankScale = getScaleByReactorId(selectedReactorId);
+      if (currentTankScale !== newScale) {
+        setSelectedReactorId('all');
+      }
+    }
+  };
+
+  const handleSelectReactor = (newReactorId: number | 'all') => {
+    setSelectedReactorId(newReactorId);
+    if (newReactorId !== 'all' && selectedScale !== 'all') {
+      const tankScale = getScaleByReactorId(newReactorId);
+      if (tankScale !== selectedScale) {
+        setSelectedScale(tankScale);
+      }
+    }
   };
 
   const handleOpenChecklistForReactor = (reactorId: number) => {
@@ -405,14 +428,21 @@ export default function App() {
 
   // Active scale
   const activeScale: ScaleVolume =
-    selectedReactorId === 'all' ? '100L' : getScaleByReactorId(selectedReactorId);
+    selectedReactorId !== 'all'
+      ? getScaleByReactorId(selectedReactorId)
+      : selectedScale !== 'all'
+      ? selectedScale
+      : '100L';
   const activeSpecs = SCALE_SPECS[activeScale];
   const activeReactor = selectedReactorId === 'all' ? null : REACTORS.find((r) => r.id === selectedReactorId);
 
-  // Filtered records for charts & parameter averages (quando 'all', inclui todos os biorreatores)
+  // Filtered records for charts & parameter averages (filtra por escala e/ou tanque selecionados)
   const rawScopeRecords = records.filter((r) => {
-    if (selectedReactorId !== 'all') {
-      return r.reactorId === selectedReactorId;
+    if (selectedReactorId !== 'all' && r.reactorId !== selectedReactorId) {
+      return false;
+    }
+    if (selectedScale !== 'all' && r.scale !== selectedScale) {
+      return false;
     }
     return true;
   });
@@ -475,10 +505,18 @@ export default function App() {
                 <Activity className="w-4 h-4" />
               </span>
               <h1 className="text-xl font-bold tracking-tight text-slate-50">
-                {activeReactor ? `${activeReactor.tag} · ${activeReactor.name}` : 'Todos os Biorreatores (1 ao 16)'}
+                {activeReactor
+                  ? `${activeReactor.tag} · ${activeReactor.name}`
+                  : selectedScale !== 'all'
+                  ? `Biorreatores · Escala ${selectedScale}`
+                  : 'Todos os Biorreatores (1 ao 16)'}
               </h1>
               <span className="text-xs font-mono text-cyan-400 font-semibold">
-                {activeReactor ? `· Escala ${activeScale}` : '· Visão Consolidada'}
+                {activeReactor
+                  ? `· Escala ${activeScale}`
+                  : selectedScale !== 'all'
+                  ? '· Filtro por Escala'
+                  : '· Visão Consolidada'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-1.5">
@@ -487,44 +525,80 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Filtro por Escala no Topo */}
+            <select
+              value={selectedScale}
+              onChange={(e) => handleSelectScale(e.target.value as ScaleVolume | 'all')}
+              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/60 font-semibold"
+              title="Filtrar por Escala"
+            >
+              <option value="all">Todas as Escalas</option>
+              <option value="100L">Escala 100L (Tanques 1 ao 5)</option>
+              <option value="500L">Escala 500L (Tanques 6 ao 10)</option>
+              <option value="5000L">Escala 5000L (Tanques 11 ao 14)</option>
+              <option value="3000L">Escala 3000L (Tanques 15 e 16)</option>
+            </select>
+
+            {/* Filtro por Tanque no Topo */}
             <select
               value={selectedReactorId}
-              onChange={(e) => setSelectedReactorId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              onChange={(e) => handleSelectReactor(e.target.value === 'all' ? 'all' : Number(e.target.value))}
               className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/60 font-semibold"
+              title="Filtrar por Tanque / Biorreator"
             >
-              <option value="all">Todos os Biorreatores (1 ao 16)</option>
-              <optgroup label="100L (Tanques 1 ao 5)">
-                {REACTORS.filter((r) => r.scale === '100L').map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.tag} · {r.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="500L (Tanques 6 ao 10)">
-                {REACTORS.filter((r) => r.scale === '500L').map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.tag} · {r.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="5000L (Tanques 11 ao 14)">
-                {REACTORS.filter((r) => r.scale === '5000L').map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.tag} · {r.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="3000L (Tanques 15 e 16)">
-                {REACTORS.filter((r) => r.scale === '3000L').map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.tag} · {r.name}
-                  </option>
-                ))}
-              </optgroup>
+              <option value="all">
+                {selectedScale === 'all'
+                  ? 'Todos os Biorreatores (1 ao 16)'
+                  : `Todos os Tanques (${selectedScale})`}
+              </option>
+              {(selectedScale === 'all' || selectedScale === '100L') && (
+                <optgroup label="100L (Tanques 1 ao 5)">
+                  {REACTORS.filter((r) => r.scale === '100L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(selectedScale === 'all' || selectedScale === '500L') && (
+                <optgroup label="500L (Tanques 6 ao 10)">
+                  {REACTORS.filter((r) => r.scale === '500L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(selectedScale === 'all' || selectedScale === '5000L') && (
+                <optgroup label="5000L (Tanques 11 ao 14)">
+                  {REACTORS.filter((r) => r.scale === '5000L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {(selectedScale === 'all' || selectedScale === '3000L') && (
+                <optgroup label="3000L (Tanques 15 e 16)">
+                  {REACTORS.filter((r) => r.scale === '3000L').map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tag} · {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
 
             <button
-              onClick={() => handleOpenChecklistForReactor(selectedReactorId === 'all' ? 1 : selectedReactorId)}
+              onClick={() =>
+                handleOpenChecklistForReactor(
+                  selectedReactorId !== 'all'
+                    ? selectedReactorId
+                    : selectedScale !== 'all'
+                    ? REACTORS.find((r) => r.scale === selectedScale)?.id || 1
+                    : 1
+                )
+              }
               className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -713,7 +787,7 @@ export default function App() {
         {/* Section 1: Parameter Averages Visualization */}
         <section id="averages">
           <ParameterAveragesPanel
-            records={chartRecords}
+            records={selectedReactorId === 'all' ? (activeRecords.length > 0 ? activeRecords : records) : chartRecords}
             scale={activeScale}
             selectedReactorId={selectedReactorId}
           />
@@ -724,7 +798,10 @@ export default function App() {
           <InteractiveCharts
             records={chartRecords}
             scale={activeScale}
+            selectedScale={selectedScale}
+            onSelectScale={handleSelectScale}
             selectedReactorId={selectedReactorId}
+            onSelectReactor={handleSelectReactor}
             onOpenDORefModal={() => setIsDORefModalOpen(true)}
           />
         </section>
@@ -738,7 +815,7 @@ export default function App() {
             onToggleArchiveBatch={handleToggleArchiveBatch}
             onOpenPDFModal={() => setIsPDFModalOpen(true)}
             selectedReactorId={selectedReactorId}
-            onSelectReactor={setSelectedReactorId}
+            onSelectReactor={handleSelectReactor}
           />
         </section>
 

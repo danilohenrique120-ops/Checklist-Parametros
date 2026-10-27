@@ -59,6 +59,7 @@ export interface ChecklistRecord {
   // Measured values
   temperature: number;      // °C
   dissolvedOxygen: number;  // % O2 probe
+  noDOProbe?: boolean;      // true when bioreactor is operating without a DO probe
   standardCurveO2?: number; // optional standard curve
   agitation: number;        // RPM
   pressure: number;         // bar

@@ -87,6 +87,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   // Parameters
   const [temperature, setTemperature] = useState<number>(30.0);
   const [dissolvedOxygen, setDissolvedOxygen] = useState<number>(21.0);
+  const [noDOProbe, setNoDOProbe] = useState<boolean>(false);
   const [agitation, setAgitation] = useState<number>(95);
   const [pressure, setPressure] = useState<number>(0.1);
   const [airflow, setAirflow] = useState<number>(85);
@@ -153,6 +154,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       setBatchId(editingRecord.batchId || '');
       setTemperature(editingRecord.temperature);
       setDissolvedOxygen(editingRecord.dissolvedOxygen);
+      setNoDOProbe(Boolean(editingRecord.noDOProbe));
       setAgitation(editingRecord.agitation);
       setPressure(editingRecord.pressure);
       setAirflow(editingRecord.airflow);
@@ -168,6 +170,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       const sp = SCALE_SPECS[sc];
       setTemperature(30.0);
       setDissolvedOxygen(21.0);
+      setNoDOProbe(false);
       setAgitation(sp.agitation.target);
       setPressure(sp.pressure.target);
       setAirflow(sp.airflow.target);
@@ -233,7 +236,8 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   // Validation in real-time with 3-tier color semaphore
   const validation = validateChecklistValues(scale, {
     temperature,
-    dissolvedOxygen,
+    dissolvedOxygen: noDOProbe ? 0 : dissolvedOxygen,
+    noDOProbe,
     agitation,
     pressure,
     airflow,
@@ -365,7 +369,8 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       processHours,
       archived: editingRecord ? Boolean(editingRecord.archived) : false,
       temperature,
-      dissolvedOxygen,
+      dissolvedOxygen: noDOProbe ? 0 : dissolvedOxygen,
+      noDOProbe: noDOProbe || undefined,
       agitation,
       pressure,
       airflow,
@@ -565,7 +570,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-4 p-3.5 bg-[#080C14]/90 border border-slate-800 rounded-lg">
               <div className="sm:col-span-3">
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Código do Lote (Batch ID) *
+                  Numero da OP *
                 </label>
                 <input
                   type="text"
@@ -751,25 +756,56 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
 
               {/* Oxigênio Dissolvido (Sonda %) */}
               <div className={`p-3.5 rounded-lg border transition-all ${getSemaphoreCardStyle(validation.doSemaphore)}`}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-100">Oxigênio Dissolvido (%) *</label>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    {doPhase ? `${processHours}h · ${doPhase.phase}` : `${processHours}h · Livre`}
-                  </span>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <label className="text-xs font-bold text-slate-100">
+                    Oxigênio Dissolvido (%) {!noDOProbe && '*'}
+                  </label>
+                  <label
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-cyan-300 cursor-pointer select-none bg-[#080C14]/90 border border-slate-700/90 hover:border-cyan-500/60 px-2 py-0.5 rounded transition-colors shrink-0"
+                    title="Marque quando o biorreator estiver operando sem sonda de O2 para não contabilizar desvio"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={noDOProbe}
+                      onChange={(e) => setNoDOProbe(e.target.checked)}
+                      className="rounded border-slate-600 bg-slate-900 text-cyan-400 focus:ring-cyan-500 w-3.5 h-3.5 accent-cyan-400 cursor-pointer"
+                    />
+                    Sem sonda
+                  </label>
                 </div>
-                <input
-                  type="number"
-                  step="0.05"
-                  required
-                  value={dissolvedOxygen}
-                  onChange={(e) => setDissolvedOxygen(parseFloat(e.target.value) || 0)}
-                  className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.doSemaphore)}`}
-                />
+
+                {noDOProbe ? (
+                  <div className="w-full text-xs font-mono font-semibold border border-slate-700/80 bg-[#080C14]/70 text-slate-400 rounded-md px-3 py-2 flex items-center justify-between">
+                    <span>Sem sonda instalada</span>
+                    <span className="text-[10px] text-cyan-400 font-sans">Isento de desvio</span>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    step="0.05"
+                    required
+                    value={dissolvedOxygen}
+                    onChange={(e) => setDissolvedOxygen(parseFloat(e.target.value) || 0)}
+                    className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.doSemaphore)}`}
+                  />
+                )}
+
                 <div className="mt-2 flex items-center justify-between text-[11px]">
                   <span className="text-slate-400 font-mono">
-                    {doPhase ? `${doPhase.o2ProbeMin}% a ${doPhase.o2ProbeMax}%` : `Escala ${scale}: livre`}
+                    {noDOProbe
+                      ? `${processHours}h · Sem sonda`
+                      : doPhase
+                      ? `${processHours}h · ${doPhase.o2ProbeMin}% a ${doPhase.o2ProbeMax}%`
+                      : `${processHours}h · Escala ${scale} livre`}
                   </span>
-                  {renderSemaphoreBadge(validation.doSemaphore)}
+                  {noDOProbe ? (
+                    <span className="font-semibold text-cyan-400 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block" />
+                      Sem Sonda
+                    </span>
+                  ) : (
+                    renderSemaphoreBadge(validation.doSemaphore)
+                  )}
                 </div>
               </div>
             </div>

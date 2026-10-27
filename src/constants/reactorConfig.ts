@@ -194,6 +194,7 @@ export function validateChecklistValues(
   values: {
     temperature: number;
     dissolvedOxygen: number;
+    noDOProbe?: boolean;
     standardCurveO2?: number;
     agitation: number;
     pressure: number;
@@ -225,13 +226,13 @@ export function validateChecklistValues(
   const airSemaphore = evaluateRangeSemaphore(values.airflow, airMin, airMax);
   const isAirNominal = airSemaphore !== 'critical';
 
-  // Dissolved Oxygen: if 100L or 5000L, check phase range; if 500L or 3000L, free
+  // Dissolved Oxygen: if noDOProbe is checked, exempt from deviation; otherwise if 100L or 5000L, check phase range
   let isDONominal = true;
   let doSemaphore: SemaphoreLevel = 'free';
   let curveSemaphore: SemaphoreLevel = 'free';
   let doMessage: string | null = null;
 
-  if (scale === '100L' || scale === '5000L') {
+  if (!values.noDOProbe && (scale === '100L' || scale === '5000L')) {
     const phase = getDOPhaseForHours(scale, values.processHours ?? 24);
     if (phase) {
       const minO2 = Math.min(phase.o2ProbeMin, phase.o2ProbeMax);
