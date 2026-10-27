@@ -35,8 +35,98 @@ interface CloudChecklistDocument {
   lastUpdatedISO?: string;
 }
 
+function formatLocalYYYYMMDD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatLocalHHMM(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function revalidateRecordList(list: ChecklistRecord[]): ChecklistRecord[] {
-  return list.map((rec) => {
+  // Passo 1: Normaliza timestamp e calcula processHours caso inoculationDate/Time existam
+  const normalized = list.map((rec) => {
+    const parsedTs =
+      rec.date && rec.time ? new Date(`${rec.date}T${rec.time}:00`).getTime() : rec.timestamp;
+    const timestamp = !isNaN(parsedTs) ? parsedTs : rec.timestamp || Date.now();
+
+    let inoculationDate = rec.inoculationDate;
+    let inoculationTime = rec.inoculationTime;
+    let processHours = typeof rec.processHours === 'number' ? rec.processHours : 0;
+
+    if (inoculationDate && inoculationTime) {
+      const inocTs = new Date(`${inoculationDate}T${inoculationTime}:00`).getTime();
+      if (!isNaN(inocTs) && timestamp >= inocTs) {
+        processHours = Number(((timestamp - inocTs) / (1000 * 60 * 60)).toFixed(1));
+      }
+    }
+
+    return {
+      ...rec,
+      timestamp,
+      inoculationDate,
+      inoculationTime,
+      processHours,
+    };
+  });
+
+  // Passo 2: Para registros antigos do mesmo reator/lote que ficaram com processHours duplicado em horários diferentes,
+  // estabelece a inoculação base do lote e calcula as horas reais a partir do horário de cada check
+  const byReactorBatch = new Map<string, ChecklistRecord[]>();
+  for (const r of normalized) {
+    const key = `${r.reactorId}__${r.batchId || 'DEFAULT'}`;
+    const arr = byReactorBatch.get(key) || [];
+    arr.push(r);
+    byReactorBatch.set(key, arr);
+  }
+
+  byReactorBatch.forEach((group) => {
+    if (group.length > 1) {
+      const sorted = [...group].sort((a, b) => a.timestamp - b.timestamp);
+      const uniqueHours = new Set(sorted.map((item) => item.processHours));
+      // Se há múltiplos registros em horários diferentes mas com o mesmo processHours
+      if (uniqueHours.size < sorted.length) {
+        const first = sorted[0];
+        let baseInocTs: number;
+        if (first.inoculationDate && first.inoculationTime) {
+          baseInocTs = new Date(`${first.inoculationDate}T${first.inoculationTime}:00`).getTime();
+        } else {
+          const initialOffsetHours =
+            first.processHours > 0 && first.processHours !== 24 ? first.processHours : 2;
+          const d = new Date(first.timestamp - initialOffsetHours * 3600 * 1000);
+          d.setMinutes(0, 0, 0);
+          baseInocTs = d.getTime();
+        }
+
+        const baseInocDateObj = new Date(baseInocTs);
+        const sharedInocDate = formatLocalYYYYMMDD(baseInocDateObj);
+        const sharedInocTime = formatLocalHHMM(baseInocDateObj);
+
+        sorted.forEach((item) => {
+          if (!item.inoculationDate || !item.inoculationTime) {
+            item.inoculationDate = sharedInocDate;
+            item.inoculationTime = sharedInocTime;
+          }
+          const inocTs = new Date(`${item.inoculationDate}T${item.inoculationTime}:00`).getTime();
+          if (!isNaN(inocTs) && item.timestamp >= inocTs) {
+            item.processHours = Number(((item.timestamp - inocTs) / (1000 * 60 * 60)).toFixed(1));
+          }
+        });
+      }
+    }
+
+    // Garante que qualquer registro sem data/hora de inoculação tenha o campo preenchido
+    group.forEach((item) => {
+      if (!item.inoculationDate || !item.inoculationTime) {
+        const inocObj = new Date(item.timestamp - (item.processHours || 0) * 3600 * 1000);
+        item.inoculationDate = formatLocalYYYYMMDD(inocObj);
+        item.inoculationTime = formatLocalHHMM(inocObj);
+      }
+    });
+  });
+
+  // Passo 3: Revalida conformidade com o processHours atualizado
+  return normalized.map((rec) => {
     const scale = rec.scale || getScaleByReactorId(rec.reactorId);
     const v = validateChecklistValues(scale, {
       temperature: rec.temperature,
@@ -663,6 +753,7 @@ export default function App() {
         initialReactorId={checklistPresetReactorId}
         operators={operators}
         onAddOperator={handleAddOperator}
+        existingRecords={records}
       />
 
       <PDFReportModal

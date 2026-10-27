@@ -782,9 +782,18 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                   <span className="font-bold text-slate-100">{selectedRecordForDetail.airflow} L/min</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Idade de Processo:</span>
-                  <span className="font-bold text-slate-100">{selectedRecordForDetail.processHours}h</span>
+                  <span className="text-slate-400 block text-[11px]">Tempo de Cultivo:</span>
+                  <span className="font-bold text-cyan-300">{selectedRecordForDetail.processHours}h</span>
                 </div>
+                {selectedRecordForDetail.inoculationDate && selectedRecordForDetail.inoculationTime && (
+                  <div className="col-span-2 pt-1.5 border-t border-slate-800/80">
+                    <span className="text-slate-400 block text-[11px]">Data / Horário de Inoculação:</span>
+                    <span className="font-bold text-slate-200">
+                      {selectedRecordForDetail.inoculationDate.split('-').reverse().join('/')} às{' '}
+                      {selectedRecordForDetail.inoculationTime}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {selectedRecordForDetail.deviationNotes && (

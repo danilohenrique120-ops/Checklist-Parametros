@@ -51,7 +51,9 @@ export interface ChecklistRecord {
   date: string;       // YYYY-MM-DD
   time: string;       // HH:mm
   timestamp: number;  // unix ms
-  processHours: number; // e.g., 24.5 h
+  inoculationDate?: string; // YYYY-MM-DD
+  inoculationTime?: string; // HH:mm
+  processHours: number; // Calculated hours from inoculation to checklist date/time
   archived?: boolean; // Whether the batch/record is archived in completed batches
   
   // Measured values

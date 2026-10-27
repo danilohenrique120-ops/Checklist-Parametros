@@ -93,6 +93,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   onOpenDORefModal,
 }) => {
   const [activeTab, setActiveTab] = useState<ParameterKey>('temperature');
+  const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
   const [hoveredPoint, setHoveredPoint] = useState<{
     record: ChecklistRecord;
     x: number;
@@ -100,13 +101,87 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
     param: ParameterKey;
   } | null>(null);
 
-  // Sort records by processHours then timestamp
-  const sortedRecords = [...records].sort((a, b) => a.processHours - b.processHours || a.timestamp - b.timestamp);
+  // Extract unique batches/dates available in current records scope
+  const availableBatches = Array.from(
+    new Set(records.map((r) => r.batchId || 'Lote Padrão'))
+  );
+
+  const effectiveBatchFilter =
+    selectedBatchFilter === 'all' || availableBatches.includes(selectedBatchFilter)
+      ? selectedBatchFilter
+      : 'all';
+
+  const filteredByBatch =
+    effectiveBatchFilter === 'all'
+      ? records
+      : records.filter((r) => (r.batchId || 'Lote Padrão') === effectiveBatchFilter);
+
+  // Compute effective cultivation hours for each record and ensure chronological ordering
+  const getEffectiveHours = (r: ChecklistRecord): number => {
+    if (r.inoculationDate && r.inoculationTime && r.date && r.time) {
+      const inocTs = new Date(`${r.inoculationDate}T${r.inoculationTime}:00`).getTime();
+      const checkTs = new Date(`${r.date}T${r.time}:00`).getTime();
+      if (!isNaN(inocTs) && !isNaN(checkTs) && checkTs >= inocTs) {
+        return Number(((checkTs - inocTs) / (1000 * 60 * 60)).toFixed(2));
+      }
+    }
+    return typeof r.processHours === 'number' && !isNaN(r.processHours) ? r.processHours : 0;
+  };
+
+  // Sort records by effective hours then timestamp
+  const rawSorted = [...filteredByBatch].sort((a, b) => {
+    const ha = getEffectiveHours(a);
+    const hb = getEffectiveHours(b);
+    if (Math.abs(ha - hb) > 0.01) return ha - hb;
+    return a.timestamp - b.timestamp;
+  });
+
+  // Ensure every checklist registered at a different time has a distinct X position (plotHours)
+  // so two checklists on the same tank at different times never overlap on the same coordinate
+  const plottedRecords: { record: ChecklistRecord; plotHours: number }[] = [];
+  rawSorted.forEach((rec, idx) => {
+    let h = getEffectiveHours(rec);
+
+    if (idx > 0) {
+      const prev = plottedRecords[idx - 1];
+      // If two records on the same reactor had identical processHours (e.g. legacy 24h) but different timestamps,
+      // derive the hour difference from their actual check timestamps
+      if (
+        rec.reactorId === prev.record.reactorId &&
+        Math.abs(h - getEffectiveHours(prev.record)) < 0.05 &&
+        rec.timestamp > prev.record.timestamp
+      ) {
+        const diffFromTimestamp = (rec.timestamp - prev.record.timestamp) / (1000 * 60 * 60);
+        if (diffFromTimestamp > 0 && diffFromTimestamp <= 72) {
+          h = Number((prev.plotHours + diffFromTimestamp).toFixed(2));
+        }
+      }
+
+      // Guarantee a minimum horizontal visual separation so no two distinct readings ever sit on top of each other
+      if (h <= prev.plotHours + 0.45) {
+        h = Number((prev.plotHours + 0.75).toFixed(2));
+      }
+    }
+
+    plottedRecords.push({ record: rec, plotHours: Math.max(0, h) });
+  });
+
+  const sortedRecords = plottedRecords.map((item) => item.record);
 
   const currentConfig = PARAM_CONFIGS[activeTab];
   const target = currentConfig.targetGetter(scale);
   const delta = currentConfig.deltaGetter(scale);
-  const [domainMin, domainMax] = currentConfig.minMaxDomain(scale);
+  const [baseDomainMin, baseDomainMax] = currentConfig.minMaxDomain(scale);
+
+  // Dynamically expand Y-axis domain if any measured value is outside the base range
+  const measuredValues = sortedRecords.map((r) => currentConfig.valGetter(r));
+  const minMeasured = measuredValues.length > 0 ? Math.min(...measuredValues) : baseDomainMin;
+  const maxMeasured = measuredValues.length > 0 ? Math.max(...measuredValues) : baseDomainMax;
+  const span = Math.max(0.1, baseDomainMax - baseDomainMin);
+  const domainMin =
+    minMeasured < baseDomainMin ? Number((minMeasured - span * 0.12).toFixed(2)) : baseDomainMin;
+  const domainMax =
+    maxMeasured > baseDomainMax ? Number((maxMeasured + span * 0.12).toFixed(2)) : baseDomainMax;
 
   // Calculate average of the active parameter
   const avgValue =
@@ -121,8 +196,11 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   const chartW = svgWidth - padding.left - padding.right;
   const chartH = svgHeight - padding.top - padding.bottom;
 
-  // Process hours range (0h to 60h in steps of 2h)
-  const maxHours = Math.max(60, ...sortedRecords.map((r) => Math.ceil((r.processHours || 10) / 2) * 2));
+  // Process hours range (0h to at least 60h in steps of 2h)
+  const maxHours = Math.max(
+    60,
+    ...plottedRecords.map((item) => Math.ceil((item.plotHours || 10) / 2) * 2)
+  );
   const minHours = 0;
 
   // Generate 2-hour ticks: 0, 2, 4, 6, 8, ..., maxHours
@@ -131,23 +209,11 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
     twoHourTicks.push(h);
   }
 
-  // Helper to get the clock horario (HH:mm) for any 2-hour tick
+  // Helper to get the full clock hour (always even full hours: 06:00, 08:00, 10:00, 12:00...) for any 2-hour tick
   const getClockTimeForHour = (h: number): string => {
-    const exactRec = sortedRecords.find((r) => Math.abs(r.processHours - h) < 0.25);
-    if (exactRec) return exactRec.time;
-
-    let baseHour = 6;
-    let baseMin = 0;
-    if (sortedRecords.length > 0) {
-      const first = sortedRecords[0];
-      const [hh, mm] = first.time.split(':').map(Number);
-      if (!isNaN(hh)) {
-        baseHour = (hh - Math.round(first.processHours) + 240) % 24;
-        baseMin = mm || 0;
-      }
-    }
-    const clockH = (baseHour + h) % 24;
-    return `${String(clockH).padStart(2, '0')}:${String(baseMin).padStart(2, '0')}`;
+    const baseHour = 6;
+    const clockH = (((baseHour + Math.round(h)) % 24) + 24) % 24;
+    return `${String(clockH).padStart(2, '0')}:00`;
   };
 
   const scaleX = (h: number) => padding.left + ((h - minHours) / (maxHours - minHours)) * chartW;
@@ -162,14 +228,15 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   const yUpper = delta !== null ? scaleY(target + delta) : null;
   const yLower = delta !== null ? scaleY(target - delta) : null;
 
-  // Build path for points
-  const points = sortedRecords.map((r) => {
-    const val = currentConfig.valGetter(r);
+  // Build path for points using plotHours
+  const points = plottedRecords.map((item) => {
+    const val = currentConfig.valGetter(item.record);
     return {
-      x: scaleX(r.processHours),
+      x: scaleX(item.plotHours),
       y: scaleY(val),
       val,
-      record: r,
+      plotHours: item.plotHours,
+      record: item.record,
     };
   });
 
@@ -215,7 +282,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       {/* Top Header & Tabs */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 mb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-semibold text-slate-100 tracking-tight">
               Monitoramento de Tendências & Tolerâncias (A cada 2 Horas)
             </h2>
@@ -224,29 +291,47 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Acompanhamento ponto a ponto de 2 em 2 horas com linhas de limites mínimo/máximo e média
+            Acompanhamento ponto a ponto de 2 em 2 horas (horários cheios) com linhas de limites mínimo/máximo e média
           </p>
         </div>
 
-        {/* Tab Buttons */}
-        <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg overflow-x-auto">
-          {(Object.keys(PARAM_CONFIGS) as ParameterKey[]).map((key) => {
-            const cfg = PARAM_CONFIGS[key];
-            const isActive = activeTab === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-                  isActive
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {cfg.label}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2">
+          {availableBatches.length > 1 && (
+            <select
+              value={effectiveBatchFilter}
+              onChange={(e) => setSelectedBatchFilter(e.target.value)}
+              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              title="Filtrar por lote no gráfico"
+            >
+              <option value="all">Todos os Lotes ({records.length})</option>
+              {availableBatches.map((b) => (
+                <option key={b} value={b}>
+                  Lote {b}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Tab Buttons */}
+          <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg overflow-x-auto">
+            {(Object.keys(PARAM_CONFIGS) as ParameterKey[]).map((key) => {
+              const cfg = PARAM_CONFIGS[key];
+              const isActive = activeTab === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+                    isActive
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {cfg.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -313,7 +398,8 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       </div>
 
       {/* SVG Interactive Chart Stage */}
-      <div className="relative w-full overflow-x-auto pb-1">
+      <div className="relative w-full">
+        <div className="w-full overflow-x-auto pb-1">
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="w-full h-auto select-none font-mono"
@@ -583,6 +669,11 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 ? pt.record.isAirflowNominal
                 : pt.record.isDONominal;
 
+            const prevPt = i > 0 ? points[i - 1] : null;
+            const isCloseToPrev = prevPt ? Math.abs(pt.x - prevPt.x) < 32 : false;
+            const showTimeBadge = (points.length <= 24 && !isCloseToPrev) || !isNominal;
+            const badgeY = pt.y > padding.top + 22 ? pt.y - 9 : pt.y + 15;
+
             return (
               <g
                 key={pt.record.id || i}
@@ -617,11 +708,23 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                   stroke="#090D16"
                   strokeWidth="2"
                 />
+                {showTimeBadge && (
+                  <text
+                    x={pt.x}
+                    y={badgeY}
+                    textAnchor="middle"
+                    fontSize="8"
+                    fontWeight="600"
+                    fill={isNominal ? '#CBD5E1' : '#FDA4AF'}
+                  >
+                    {pt.record.time}
+                  </text>
+                )}
               </g>
             );
           })}
 
-          {/* X-Axis (Every 2 Hours + Horários Ponto a Ponto) */}
+          {/* X-Axis (Every 2 Hours + Horários Cheios) */}
           <line
             x1={padding.left}
             y1={padding.top + chartH}
@@ -634,7 +737,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           {twoHourTicks.map((h) => {
             const x = scaleX(h);
             const clockTime = getClockTimeForHour(h);
-            const hasPointAtHour = sortedRecords.some((r) => Math.abs(r.processHours - h) < 0.25);
+            const hasPointAtHour = plottedRecords.some((item) => Math.abs(item.plotHours - h) < 0.6);
 
             return (
               <g key={h}>
@@ -646,7 +749,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                   stroke={hasPointAtHour ? '#38BDF8' : '#475569'}
                   strokeWidth={hasPointAtHour ? '1.5' : '1'}
                 />
-                {/* Horário (HH:mm) */}
+                {/* Horário Cheio (06:00, 08:00, 10:00...) */}
                 <text
                   x={x}
                   y={padding.top + chartH + 17}
@@ -679,7 +782,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             fontWeight="600"
             fill="#94A3B8"
           >
-            Horários Ponto a Ponto (A cada 2 horas · HH:mm / Tempo de Processo)
+            Horários Ponto a Ponto (A cada 2 horas · Horários Cheios 06:00, 08:00, 10:00... / Tempo de Cultivo)
           </text>
 
           {/* Y-Axis Labels */}
@@ -711,80 +814,93 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             );
           })}
         </svg>
+        </div>
 
-        {/* Hover Tooltip Overlay */}
-        {hoveredPoint && (
-          <div
-            className="absolute z-20 pointer-events-none bg-[#080C14]/95 text-slate-100 rounded-lg p-3 text-xs shadow-2xl border border-slate-700 w-64 transform -translate-x-1/2 -translate-y-full mb-3"
-            style={{
-              left: `${Math.min(88, Math.max(12, (hoveredPoint.x / svgWidth) * 100))}%`,
-              top: `${(hoveredPoint.y / svgHeight) * 100}%`,
-            }}
-          >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5 font-mono">
-              <span className="font-semibold text-slate-200">
-                {hoveredPoint.record.reactorTag} · {hoveredPoint.record.processHours}h
-              </span>
-              <span className="text-cyan-400 font-bold">
-                {hoveredPoint.record.time} ({hoveredPoint.record.date.split('-').reverse().slice(0, 2).join('/')})
-              </span>
-            </div>
+        {/* Hover Tooltip Overlay (Placed outside overflow-x-auto and dynamically positioned so it never clips) */}
+        {hoveredPoint && (() => {
+          const xPct = (hoveredPoint.x / svgWidth) * 100;
+          const yPct = (hoveredPoint.y / svgHeight) * 100;
+          const placeOnLeft = xPct > 62;
+          const clampedTopPct = Math.min(58, Math.max(4, yPct - 18));
 
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">{currentConfig.label}:</span>
-                <span className="font-bold text-white font-mono text-sm">
-                  {currentConfig.valGetter(hoveredPoint.record)} {currentConfig.unit}
+          return (
+            <div
+              className={`absolute z-30 pointer-events-none bg-[#080C14]/95 text-slate-100 rounded-lg p-3 text-xs shadow-2xl border border-slate-600/90 w-64 ${
+                placeOnLeft ? '-translate-x-full -ml-3' : 'ml-3'
+              }`}
+              style={{
+                left: `${Math.min(94, Math.max(6, xPct))}%`,
+                top: `${clampedTopPct}%`,
+              }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5 font-mono">
+                <span className="font-semibold text-slate-200">
+                  {hoveredPoint.record.reactorTag} · {hoveredPoint.record.processHours}h
+                </span>
+                <span className="text-cyan-400 font-bold">
+                  {hoveredPoint.record.time} ({hoveredPoint.record.date.split('-').reverse().slice(0, 2).join('/')})
                 </span>
               </div>
 
-              {activeTab === 'dissolvedOxygen' && hoveredDOPhase && (
-                <div className="flex justify-between items-center text-slate-300 font-mono">
-                  <span>Limites ({hoveredDOPhase.phase}):</span>
-                  <span className="text-teal-300">
-                    {hoveredDOPhase.o2ProbeMin}% – {hoveredDOPhase.o2ProbeMax}%
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">{currentConfig.label}:</span>
+                  <span className="font-bold text-white font-mono text-sm">
+                    {currentConfig.valGetter(hoveredPoint.record)} {currentConfig.unit}
                   </span>
                 </div>
-              )}
 
-              {avgValue !== null && (
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Média do Parâmetro:</span>
-                  <span className="font-mono text-purple-300">
-                    {avgValue.toFixed(2)} {currentConfig.unit}
-                  </span>
+                {hoveredPoint.record.inoculationDate && hoveredPoint.record.inoculationTime && (
+                  <div className="flex justify-between items-center text-slate-400 font-mono">
+                    <span>Inoculação:</span>
+                    <span className="text-cyan-300">
+                      {hoveredPoint.record.inoculationDate.split('-').reverse().slice(0, 2).join('/')}{' '}
+                      {hoveredPoint.record.inoculationTime}
+                    </span>
+                  </div>
+                )}
+
+                {activeTab === 'dissolvedOxygen' && hoveredDOPhase && (
+                  <div className="flex justify-between items-center text-slate-300 font-mono">
+                    <span>Limites ({hoveredDOPhase.phase}):</span>
+                    <span className="text-teal-300">
+                      {hoveredDOPhase.o2ProbeMin}% – {hoveredDOPhase.o2ProbeMax}%
+                    </span>
+                  </div>
+                )}
+
+                {avgValue !== null && (
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span>Média do Parâmetro:</span>
+                    <span className="font-mono text-purple-300">
+                      {avgValue.toFixed(2)} {currentConfig.unit}
+                    </span>
+                  </div>
+                )}
+
+                {activeTab !== 'dissolvedOxygen' && (
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span>Alvo / Delta:</span>
+                    <span className="font-mono">
+                      {target} {delta ? `(±${delta})` : '(Fixo)'} {currentConfig.unit}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800">
+                  <span>Operador:</span>
+                  <span className="text-slate-200">{hoveredPoint.record.operatorName}</span>
                 </div>
-              )}
 
-              {activeTab !== 'dissolvedOxygen' && (
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Alvo / Delta:</span>
-                  <span className="font-mono">
-                    {target} {delta ? `(±${delta})` : '(Fixo)'} {currentConfig.unit}
-                  </span>
-                </div>
-              )}
-
-              {hoveredPoint.record.standardCurveO2 !== undefined && activeTab === 'dissolvedOxygen' && (
-                <div className="flex justify-between items-center text-slate-400">
-                  <span>Curva Padrão:</span>
-                  <span className="font-mono text-cyan-400">{hoveredPoint.record.standardCurveO2}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-800">
-                <span>Operador:</span>
-                <span className="text-slate-200">{hoveredPoint.record.operatorName}</span>
+                {hoveredPoint.record.notes && (
+                  <div className="text-slate-300 italic pt-1 border-t border-slate-800 text-[11px]">
+                    "{hoveredPoint.record.notes}"
+                  </div>
+                )}
               </div>
-
-              {hoveredPoint.record.notes && (
-                <div className="text-slate-300 italic pt-1 border-t border-slate-800 text-[11px]">
-                  "{hoveredPoint.record.notes}"
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Reference note for 500L & 3000L if DO is selected */}

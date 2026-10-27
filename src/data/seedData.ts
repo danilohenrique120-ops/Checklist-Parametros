@@ -42,6 +42,9 @@ function createRecord(
   });
 
   const timestamp = new Date(`${date}T${time}:00`).getTime();
+  const inocObj = new Date(timestamp - processHours * 3600 * 1000);
+  const inoculationDate = `${inocObj.getFullYear()}-${String(inocObj.getMonth() + 1).padStart(2, '0')}-${String(inocObj.getDate()).padStart(2, '0')}`;
+  const inoculationTime = `${String(inocObj.getHours()).padStart(2, '0')}:${String(inocObj.getMinutes()).padStart(2, '0')}`;
 
   return {
     id,
@@ -53,6 +56,8 @@ function createRecord(
     date,
     time,
     timestamp,
+    inoculationDate,
+    inoculationTime,
     processHours,
     archived,
     temperature: temp,

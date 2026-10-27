@@ -8,7 +8,16 @@ import {
   validateChecklistValues,
 } from '../constants/reactorConfig';
 import { INITIAL_OPERATORS } from '../data/seedData';
-import { X, CheckCircle, AlertTriangle, Activity, Check, AlertCircle, UserPlus } from 'lucide-react';
+import {
+  X,
+  CheckCircle,
+  AlertTriangle,
+  Activity,
+  Check,
+  AlertCircle,
+  UserPlus,
+  Clock,
+} from 'lucide-react';
 
 interface ChecklistModalProps {
   isOpen: boolean;
@@ -17,26 +26,60 @@ interface ChecklistModalProps {
   initialReactorId?: number;
   operators?: string[];
   onAddOperator?: (newOperator: string) => void;
+  existingRecords?: ChecklistRecord[];
+}
+
+function getLocalDateYYYYMMDD(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getLocalTimeHHMM(d: Date = new Date()): string {
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function getDefaultInoculationDateTime(now: Date = new Date()): {
+  inocDate: string;
+  inocTime: string;
+} {
+  // Define 06:00 como horário padrão de inoculação (se antes das 06:00, usa o dia anterior)
+  const defaultInoc = new Date(now.getTime());
+  if (defaultInoc.getHours() < 6) {
+    defaultInoc.setDate(defaultInoc.getDate() - 1);
+  }
+  defaultInoc.setHours(6, 0, 0, 0);
+  return {
+    inocDate: getLocalDateYYYYMMDD(defaultInoc),
+    inocTime: '06:00',
+  };
 }
 
 export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  initialReactorId = 2,
+  initialReactorId = 1,
   operators = INITIAL_OPERATORS,
   onAddOperator,
+  existingRecords = [],
 }) => {
   const [reactorId, setReactorId] = useState<number>(initialReactorId);
   const [operatorName, setOperatorName] = useState<string>(operators[0] || INITIAL_OPERATORS[0]);
   const [isCustomOperatorMode, setIsCustomOperatorMode] = useState<boolean>(false);
   const [customOperatorInput, setCustomOperatorInput] = useState<string>('');
 
-  const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [time, setTime] = useState<string>(
-    new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  const [date, setDate] = useState<string>(() => getLocalDateYYYYMMDD());
+  const [time, setTime] = useState<string>(() => getLocalTimeHHMM());
+  const [inoculationDate, setInoculationDate] = useState<string>(
+    () => getDefaultInoculationDateTime().inocDate
   );
-  const [processHours, setProcessHours] = useState<number>(24);
+  const [inoculationTime, setInoculationTime] = useState<string>(
+    () => getDefaultInoculationDateTime().inocTime
+  );
   const [batchId, setBatchId] = useState<string>('L-100-24B');
 
   // Parameters
@@ -52,9 +95,53 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   const specs = SCALE_SPECS[scale];
   const activeReactor = REACTORS.find((r) => r.id === reactorId);
 
+  // Helper para buscar inoculação recente da batelada ativa deste biorreator
+  const resolveInoculationForReactor = (targetReactorId: number, refNow: Date) => {
+    const activeReactorRecords = existingRecords
+      .filter((r) => r.reactorId === targetReactorId && !r.archived)
+      .sort((a, b) => b.timestamp - a.timestamp);
+
+    if (activeReactorRecords.length > 0) {
+      const latest = activeReactorRecords[0];
+      if (latest.inoculationDate && latest.inoculationTime) {
+        const inocTs = new Date(`${latest.inoculationDate}T${latest.inoculationTime}:00`).getTime();
+        const elapsedHours = (refNow.getTime() - inocTs) / (1000 * 60 * 60);
+        // Reaproveita a inoculação se estiver dentro de uma janela ativa recente (até 120h)
+        if (!isNaN(elapsedHours) && elapsedHours >= -24 && elapsedHours <= 120) {
+          return {
+            inocDate: latest.inoculationDate,
+            inocTime: latest.inoculationTime,
+            batch: latest.batchId,
+          };
+        }
+      }
+    }
+    const fallback = getDefaultInoculationDateTime(refNow);
+    const r = REACTORS.find((item) => item.id === targetReactorId);
+    const sc = getScaleByReactorId(targetReactorId);
+    return {
+      inocDate: fallback.inocDate,
+      inocTime: fallback.inocTime,
+      batch: r?.currentBatch || `L-${sc}-24A`,
+    };
+  };
+
+  // Sempre que o modal abrir, atualiza Data e Horário para o momento atual exato
   useEffect(() => {
-    setReactorId(initialReactorId);
-  }, [initialReactorId]);
+    if (isOpen) {
+      const now = new Date();
+      setDate(getLocalDateYYYYMMDD(now));
+      setTime(getLocalTimeHHMM(now));
+      setReactorId(initialReactorId);
+
+      const resolved = resolveInoculationForReactor(initialReactorId, now);
+      setInoculationDate(resolved.inocDate);
+      setInoculationTime(resolved.inocTime);
+      setBatchId(resolved.batch);
+      setNotes('');
+      setErrorMsg('');
+    }
+  }, [isOpen, initialReactorId]);
 
   useEffect(() => {
     if (!operators.includes(operatorName) && operators.length > 0 && !isCustomOperatorMode) {
@@ -62,25 +149,54 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     }
   }, [operators, operatorName, isCustomOperatorMode]);
 
-  // When reactorId changes, update default parameters to target
+  // Quando o operador troca o biorreator dentro do modal aberto, atualiza alvos e inoculação do tanque
+  const handleReactorChange = (newReactorId: number) => {
+    setReactorId(newReactorId);
+    const sc = getScaleByReactorId(newReactorId);
+    const sp = SCALE_SPECS[sc];
+    setAgitation(sp.agitation.target);
+    setPressure(sp.pressure.target);
+    setAirflow(sp.airflow.target);
+
+    const checkDateObj = new Date(`${date}T${time}:00`);
+    const refDate = isNaN(checkDateObj.getTime()) ? new Date() : checkDateObj;
+    const resolved = resolveInoculationForReactor(newReactorId, refDate);
+    setInoculationDate(resolved.inocDate);
+    setInoculationTime(resolved.inocTime);
+    setBatchId(resolved.batch);
+    setErrorMsg('');
+  };
+
+  // Atualiza parâmetros padrão quando reactorId muda via prop inicial
   useEffect(() => {
     const sc = getScaleByReactorId(reactorId);
     const sp = SCALE_SPECS[sc];
     setAgitation(sp.agitation.target);
     setPressure(sp.pressure.target);
     setAirflow(sp.airflow.target);
-    const r = REACTORS.find((item) => item.id === reactorId);
-    if (r?.currentBatch) {
-      setBatchId(r.currentBatch);
-    } else {
-      setBatchId(`L-${sc}-24A`);
-    }
-    setErrorMsg('');
   }, [reactorId]);
 
   if (!isOpen) return null;
 
-  // Validation in real-time with 3-tier color semaphore (without standardCurveO2)
+  // Cálculo automático do Tempo de Cultivo (processHours) a partir da Data/Hora de Inoculação e Data/Hora do Checklist
+  const inocTimestamp = new Date(`${inoculationDate}T${inoculationTime}:00`).getTime();
+  const checkTimestamp = new Date(`${date}T${time}:00`).getTime();
+  const rawDiffHours =
+    !isNaN(inocTimestamp) && !isNaN(checkTimestamp)
+      ? (checkTimestamp - inocTimestamp) / (1000 * 60 * 60)
+      : 0;
+  const isInoculationAfterCheck = rawDiffHours < 0;
+  const processHours = Math.max(0, Number(rawDiffHours.toFixed(1)));
+
+  // Formatação amigável (ex: 14h 30min)
+  const formatElapsedDuration = (hoursFloat: number) => {
+    const totalMinutes = Math.max(0, Math.round(hoursFloat * 60));
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return m > 0 ? `${h}h ${m}min (${hoursFloat.toFixed(1)}h)` : `${h}h (${hoursFloat.toFixed(1)}h)`;
+  };
+
+  // Validation in real-time with 3-tier color semaphore
   const validation = validateChecklistValues(scale, {
     temperature,
     dissolvedOxygen,
@@ -171,10 +287,20 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const finalOperator = (isCustomOperatorMode ? customOperatorInput.trim() : operatorName.trim()) || 'Operador';
+    const finalOperator =
+      (isCustomOperatorMode ? customOperatorInput.trim() : operatorName.trim()) || 'Operador';
 
     if (isCustomOperatorMode && !customOperatorInput.trim()) {
-      setErrorMsg('Por favor, digite o nome do novo operador ou selecione um nome da lista suspensa.');
+      setErrorMsg(
+        'Por favor, digite o nome do novo operador ou selecione um nome da lista suspensa.'
+      );
+      return;
+    }
+
+    if (isInoculationAfterCheck) {
+      setErrorMsg(
+        'A Data/Horário de Inoculação não pode ser posterior à Data/Horário do Checklist atual.'
+      );
       return;
     }
 
@@ -199,7 +325,9 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       operatorName: finalOperator,
       date,
       time,
-      timestamp: new Date(`${date}T${time}:00`).getTime(),
+      timestamp: !isNaN(checkTimestamp) ? checkTimestamp : Date.now(),
+      inoculationDate,
+      inoculationTime,
       processHours,
       archived: false,
       temperature,
@@ -255,7 +383,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
           {/* Section 1: Identification & Metadata */}
           <div>
             <h3 className="text-xs font-bold text-slate-400 mb-3">
-              01. Identificação do Equipamento & Lote
+              01. Identificação do Equipamento, Registro & Inoculação
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Reactor Select */}
@@ -265,7 +393,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </label>
                 <select
                   value={reactorId}
-                  onChange={(e) => setReactorId(Number(e.target.value))}
+                  onChange={(e) => handleReactorChange(Number(e.target.value))}
                   className="w-full text-xs font-mono bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   {REACTORS.map((r) => (
@@ -367,9 +495,11 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </span>
               </div>
 
-              {/* Date & Time */}
+              {/* Date & Time of Checklist */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Data *</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Data do Check *
+                </label>
                 <input
                   type="date"
                   value={date}
@@ -377,10 +507,13 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                   required
                   className="w-full text-xs font-mono bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 />
+                <span className="text-[11px] text-slate-400 mt-1 block">Data atual do registro</span>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Horário *</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Horário do Check *
+                </label>
                 <input
                   type="time"
                   value={time}
@@ -388,14 +521,15 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                   required
                   className="w-full text-xs font-mono bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 />
+                <span className="text-[11px] text-slate-400 mt-1 block">Horário atual do registro</span>
               </div>
             </div>
 
-            {/* Batch & Process Age */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-              <div>
+            {/* Batch + Inoculation Date & Time + Automatic Cultivo Hours Calculation */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-4 p-3.5 bg-[#080C14]/90 border border-slate-800 rounded-lg">
+              <div className="sm:col-span-3">
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Código do Lote / Batelada (Batch ID) *
+                  Código do Lote (Batch ID) *
                 </label>
                 <input
                   type="text"
@@ -403,33 +537,69 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                   onChange={(e) => setBatchId(e.target.value)}
                   placeholder="Ex: L-100-24B"
                   required
-                  className="w-full text-xs font-mono bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  className="w-full text-xs font-mono bg-[#0F1624] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Tempo de Cultivo / Idade da Batelada (Horas) *
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-semibold text-cyan-300 mb-1">
+                  Data de Inoculação *
                 </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="120"
-                    value={processHours}
-                    onChange={(e) => setProcessHours(parseFloat(e.target.value) || 0)}
-                    className="w-full text-xs font-mono bg-[#080C14] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-                  <span className="text-xs font-mono text-slate-400">horas</span>
+                <input
+                  type="date"
+                  value={inoculationDate}
+                  onChange={(e) => setInoculationDate(e.target.value)}
+                  required
+                  className="w-full text-xs font-mono bg-[#0F1624] border border-cyan-500/40 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-semibold text-cyan-300 mb-1">
+                  Horário de Inoculação *
+                </label>
+                <input
+                  type="time"
+                  value={inoculationTime}
+                  onChange={(e) => setInoculationTime(e.target.value)}
+                  required
+                  className="w-full text-xs font-mono bg-[#0F1624] border border-cyan-500/40 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                />
+              </div>
+
+              {/* Automatic Elapsed Cultivation Hours Readout */}
+              <div className="sm:col-span-3 flex flex-col justify-between bg-[#131C2E] border border-cyan-500/30 rounded-lg px-3 py-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span>Tempo em Cultivo:</span>
+                  <Clock className="w-3.5 h-3.5 text-cyan-400" />
                 </div>
+                <div
+                  className={`text-sm font-mono font-bold mt-0.5 ${
+                    isInoculationAfterCheck ? 'text-rose-400' : 'text-cyan-300'
+                  }`}
+                >
+                  {isInoculationAfterCheck
+                    ? 'Data/Hora Inválida'
+                    : formatElapsedDuration(processHours)}
+                </div>
+                <div className="text-[10px] text-slate-400 truncate">
+                  {doPhase
+                    ? `Fase O2: ${doPhase.phase}`
+                    : `Escala ${scale}: O2 livre`}
+                </div>
+              </div>
+
+              {/* Phase Info Strip below */}
+              <div className="sm:col-span-12 pt-1 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <span className="text-slate-400">
+                  Cálculo automático: <strong className="text-slate-200">Inoculação ({inoculationDate.split('-').reverse().join('/')} às {inoculationTime})</strong> até <strong className="text-slate-200">Check ({date.split('-').reverse().join('/')} às {time})</strong> = <strong className="text-cyan-400 font-mono">{processHours} horas de cultivo</strong>
+                </span>
                 {doPhase ? (
-                  <span className="text-[11px] text-teal-400 font-medium mt-1 block">
-                    Fase O2 ({scale}): <strong>{doPhase.phase}</strong> ({doPhase.intervalHours}) · Faixa O2:{' '}
-                    {doPhase.o2ProbeMin}% a {doPhase.o2ProbeMax}%
+                  <span className="text-teal-400 font-medium font-mono">
+                    Faixa O2 ({doPhase.phase} · {doPhase.intervalHours}): {doPhase.o2ProbeMin}% a {doPhase.o2ProbeMax}%
                   </span>
                 ) : (
-                  <span className="text-[11px] text-slate-400 mt-1 block">
+                  <span className="text-slate-400">
                     Escala {scale}: sem curva tabelada de O2 (registro livre)
                   </span>
                 )}
@@ -548,7 +718,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-slate-100">Oxigênio Dissolvido (%) *</label>
                   <span className="text-[11px] font-mono text-slate-400">
-                    {doPhase ? `Fase: ${doPhase.phase}` : 'Sem faixa (Livre)'}
+                    {doPhase ? `${processHours}h · ${doPhase.phase}` : `${processHours}h · Livre`}
                   </span>
                 </div>
                 <input
