@@ -42,21 +42,36 @@ function formatLocalHHMM(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function toSafeNumber(val: unknown, fallback = 0): number {
+  const n = typeof val === 'number' ? val : Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function revalidateRecordList(list: ChecklistRecord[]): ChecklistRecord[] {
   // Remove permanentemente qualquer registro fictício de demonstração antiga
   const realRecords = (Array.isArray(list) ? list : []).filter(
-    (rec) => !isFictionalSeedRecord(rec)
+    (rec) => rec && typeof rec.id === 'string' && !isFictionalSeedRecord(rec)
   );
 
-  // Passo 1: Normaliza timestamp e calcula processHours caso inoculationDate/Time existam
-  const normalized = realRecords.map((rec) => {
+  // Deduplica por ID mantendo a primeira ocorrência (mais recente)
+  const seenIds = new Set<string>();
+  const uniqueRecords: ChecklistRecord[] = [];
+  for (const rec of realRecords) {
+    if (!seenIds.has(rec.id)) {
+      seenIds.add(rec.id);
+      uniqueRecords.push(rec);
+    }
+  }
+
+  // Passo 1: Normaliza números, timestamp e calcula processHours caso inoculationDate/Time existam
+  const normalized = uniqueRecords.map((rec) => {
     const parsedTs =
       rec.date && rec.time ? new Date(`${rec.date}T${rec.time}:00`).getTime() : rec.timestamp;
-    const timestamp = !isNaN(parsedTs) ? parsedTs : rec.timestamp || Date.now();
+    const timestamp = !isNaN(parsedTs) ? parsedTs : toSafeNumber(rec.timestamp, Date.now());
 
-    let inoculationDate = rec.inoculationDate;
-    let inoculationTime = rec.inoculationTime;
-    let processHours = typeof rec.processHours === 'number' ? rec.processHours : 0;
+    const inoculationDate = rec.inoculationDate;
+    const inoculationTime = rec.inoculationTime;
+    let processHours = toSafeNumber(rec.processHours, 0);
 
     if (inoculationDate && inoculationTime) {
       const inocTs = new Date(`${inoculationDate}T${inoculationTime}:00`).getTime();
@@ -67,10 +82,16 @@ function revalidateRecordList(list: ChecklistRecord[]): ChecklistRecord[] {
 
     return {
       ...rec,
+      reactorId: toSafeNumber(rec.reactorId, 1),
       timestamp,
       inoculationDate,
       inoculationTime,
       processHours,
+      temperature: toSafeNumber(rec.temperature, 30),
+      dissolvedOxygen: rec.noDOProbe ? 0 : toSafeNumber(rec.dissolvedOxygen, 0),
+      agitation: toSafeNumber(rec.agitation, 95),
+      pressure: toSafeNumber(rec.pressure, 0.1),
+      airflow: toSafeNumber(rec.airflow, 85),
     };
   });
 
@@ -240,14 +261,10 @@ export default function App() {
 
   const recordsRef = useRef<ChecklistRecord[]>(initialLocal.data);
   const operatorsRef = useRef<string[]>(initialLocal.operators);
-
-  useEffect(() => {
-    recordsRef.current = records;
-  }, [records]);
-
-  useEffect(() => {
-    operatorsRef.current = operators;
-  }, [operators]);
+  // Guarda registros salvos localmente nesta sessão para garantir que nenhum snapshot antigo da nuvem os apague
+  const pendingLocalRecordsRef = useRef<Map<string, ChecklistRecord>>(new Map());
+  const deletedRecordIdsRef = useRef<Set<string>>(new Set());
+  const lastLocalSaveMsRef = useRef<number>(0);
 
   // Inicia filtrado em TODAS as escalas e TODOS os biorreatores ('all')
   const [selectedScale, setSelectedScale] = useState<ScaleVolume | 'all'>('all');
@@ -262,15 +279,12 @@ export default function App() {
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [isDORefModalOpen, setIsDORefModalOpen] = useState<boolean>(false);
 
-  // Salva explicitamente no localStorage e no Firestore apenas quando o usuário realiza uma ação
+  // Salva explicitamente no localStorage e no Firestore quando o usuário realiza uma ação
   const persistStateToCloudAndLocal = (
-    nextRecords: ChecklistRecord[],
-    nextOperators: string[]
+    cleanRecords: ChecklistRecord[],
+    mergedOps: string[]
   ) => {
-    const cleanRecords = revalidateRecordList(nextRecords);
-    const mergedOps = mergeOperatorsList(nextOperators);
     const nowIso = new Date().toISOString();
-
     saveToLocalStorage(cleanRecords, mergedOps, nowIso);
     setSyncStatus('saving');
 
@@ -288,11 +302,13 @@ export default function App() {
       });
   };
 
-  // Escuta o documento no Firestore em tempo real (sem risco de sobrescrever a nuvem com dados fictícios)
+  // Escuta o documento no Firestore em tempo real, preservando sempre novos registros locais
   useEffect(() => {
     setSyncStatus('loading');
 
     const cached = loadFromLocalStorage();
+    recordsRef.current = cached.data;
+    operatorsRef.current = cached.operators;
     setRecords(cached.data);
     setOperators(cached.operators);
 
@@ -300,11 +316,59 @@ export default function App() {
       CLOUD_COLLECTION,
       CLOUD_DOC_ID,
       (cloudData, fromCache) => {
+        // Se o usuário acabou de salvar localmente, ignora snapshots vindos do cache local antigo do Firestore
+        if (fromCache && lastLocalSaveMsRef.current > 0) {
+          return;
+        }
+
         if (cloudData && Array.isArray(cloudData.data)) {
           const hadFictionalInCloud = cloudData.data.some((rec) => isFictionalSeedRecord(rec));
-          const mergedOps = mergeOperatorsList(cloudData.operators);
-          const revalidatedCloud = revalidateRecordList(cloudData.data);
+          const mergedOps = mergeOperatorsList([
+            ...(cloudData.operators || []),
+            ...operatorsRef.current,
+          ]);
 
+          // Filtra registros excluídos localmente nesta sessão
+          const incomingFiltered = cloudData.data.filter(
+            (rec) => rec && !deletedRecordIdsRef.current.has(rec.id)
+          );
+
+          // Verifica quais registros pendentes locais ainda não constam na nuvem
+          const cloudMap = new Map<string, ChecklistRecord>();
+          for (const rec of incomingFiltered) {
+            cloudMap.set(rec.id, rec);
+          }
+
+          let missingLocalInCloud = false;
+          pendingLocalRecordsRef.current.forEach((localRec, id) => {
+            if (deletedRecordIdsRef.current.has(id)) {
+              pendingLocalRecordsRef.current.delete(id);
+              return;
+            }
+            const inCloud = cloudMap.get(id);
+            if (!inCloud) {
+              missingLocalInCloud = true;
+            } else if (!fromCache && Date.now() - lastLocalSaveMsRef.current > 3000) {
+              // Confirmado no servidor
+              pendingLocalRecordsRef.current.delete(id);
+            }
+          });
+
+          // Mescla os registros locais pendentes no topo da lista vinda da nuvem
+          const combinedList: ChecklistRecord[] = [];
+          pendingLocalRecordsRef.current.forEach((localRec) => {
+            combinedList.push(localRec);
+          });
+          for (const rec of incomingFiltered) {
+            if (!pendingLocalRecordsRef.current.has(rec.id)) {
+              combinedList.push(rec);
+            }
+          }
+
+          const revalidatedCloud = revalidateRecordList(combinedList);
+
+          recordsRef.current = revalidatedCloud;
+          operatorsRef.current = mergedOps;
           setRecords(revalidatedCloud);
           setOperators(mergedOps);
           saveToLocalStorage(
@@ -314,20 +378,19 @@ export default function App() {
           );
           setSyncStatus('synced');
 
-          // Se o documento na nuvem ainda continha registros fictícios antigos, limpa-os definitivamente na nuvem
-          if (hadFictionalInCloud && !fromCache) {
+          // Se a nuvem tinha dados fictícios ou estava sem algum registro recém-salvo localmente, sincroniza
+          if ((hadFictionalInCloud || missingLocalInCloud) && !fromCache) {
             saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
               data: revalidatedCloud,
               operators: mergedOps,
               lastUpdatedISO: new Date().toISOString(),
             }).catch(() => {});
           }
-        } else if (!fromCache && cached.hasLocalCache && cached.data.length > 0) {
-          // Apenas se o documento realmente não existir no servidor e este navegador tiver registros reais salvos
-          const nowIso = cached.lastUpdatedISO || new Date().toISOString();
+        } else if (!fromCache && recordsRef.current.length > 0) {
+          const nowIso = new Date().toISOString();
           saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
-            data: cached.data,
-            operators: cached.operators,
+            data: recordsRef.current,
+            operators: operatorsRef.current,
             lastUpdatedISO: nowIso,
           })
             .then(() => setSyncStatus('synced'))
@@ -348,28 +411,51 @@ export default function App() {
   const handleAddOperator = (newOp: string) => {
     const trimmed = newOp.trim();
     if (!trimmed) return;
-    setOperators((prev) => {
-      if (prev.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
-        return prev;
-      }
-      const nextOps = [...prev, trimmed];
-      persistStateToCloudAndLocal(recordsRef.current, nextOps);
-      return nextOps;
-    });
+    if (operatorsRef.current.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
+      return;
+    }
+    const mergedOps = mergeOperatorsList([...operatorsRef.current, trimmed]);
+    operatorsRef.current = mergedOps;
+    lastLocalSaveMsRef.current = Date.now();
+    setOperators(mergedOps);
+    persistStateToCloudAndLocal(recordsRef.current, mergedOps);
   };
 
-  // Handle adding or updating a record
+  // Handle adding or updating a record (atômico: atualiza registros + operador em uma única gravação)
   const handleSaveRecord = (savedRec: ChecklistRecord) => {
-    setRecords((prev) => {
-      const exists = prev.some((r) => r.id === savedRec.id);
-      const nextRecords = exists
-        ? prev.map((r) => (r.id === savedRec.id ? savedRec : r))
-        : [savedRec, ...prev];
-      persistStateToCloudAndLocal(nextRecords, operatorsRef.current);
-      return nextRecords;
-    });
+    const prev = recordsRef.current;
+    const exists = prev.some((r) => r.id === savedRec.id);
+    const rawNextRecords = exists
+      ? prev.map((r) => (r.id === savedRec.id ? savedRec : r))
+      : [savedRec, ...prev];
+
+    const cleanRecords = revalidateRecordList(rawNextRecords);
+    const syncedSavedRec = cleanRecords.find((r) => r.id === savedRec.id) || savedRec;
+
+    deletedRecordIdsRef.current.delete(savedRec.id);
+    pendingLocalRecordsRef.current.set(savedRec.id, syncedSavedRec);
+    lastLocalSaveMsRef.current = Date.now();
+
+    const mergedOps = mergeOperatorsList([
+      ...operatorsRef.current,
+      savedRec.operatorName ? savedRec.operatorName.trim() : '',
+    ]);
+
+    recordsRef.current = cleanRecords;
+    operatorsRef.current = mergedOps;
+
+    setRecords(cleanRecords);
+    setOperators(mergedOps);
     setEditingRecord(null);
+
+    // Ajusta filtro de tanque e escala para garantir que o check recém-salvo fique imediatamente visível
     setSelectedReactorId(savedRec.reactorId);
+    const savedScale = savedRec.scale || getScaleByReactorId(savedRec.reactorId);
+    if (selectedScale !== 'all' && selectedScale !== savedScale) {
+      setSelectedScale(savedScale);
+    }
+
+    persistStateToCloudAndLocal(cleanRecords, mergedOps);
   };
 
   // Handle opening modal to edit an existing record
@@ -381,25 +467,31 @@ export default function App() {
 
   // Handle deleting record
   const handleDeleteRecord = (id: string) => {
-    setRecords((prev) => {
-      const nextRecords = prev.filter((r) => r.id !== id);
-      persistStateToCloudAndLocal(nextRecords, operatorsRef.current);
-      return nextRecords;
-    });
+    deletedRecordIdsRef.current.add(id);
+    pendingLocalRecordsRef.current.delete(id);
+    lastLocalSaveMsRef.current = Date.now();
+
+    const cleanRecords = revalidateRecordList(recordsRef.current.filter((r) => r.id !== id));
+    recordsRef.current = cleanRecords;
+    setRecords(cleanRecords);
+    persistStateToCloudAndLocal(cleanRecords, operatorsRef.current);
   };
 
   // Handle archiving / unarchiving a batch
   const handleToggleArchiveBatch = (batchId: string, reactorId: number, archive: boolean) => {
-    setRecords((prev) => {
-      const nextRecords = prev.map((r) => {
-        if (r.reactorId === reactorId && (r.batchId || 'Lote Padrão') === batchId) {
-          return { ...r, archived: archive };
-        }
-        return r;
-      });
-      persistStateToCloudAndLocal(nextRecords, operatorsRef.current);
-      return nextRecords;
+    lastLocalSaveMsRef.current = Date.now();
+    const rawNext = recordsRef.current.map((r) => {
+      if (r.reactorId === reactorId && (r.batchId || 'Lote Padrão') === batchId) {
+        const updated = { ...r, archived: archive };
+        pendingLocalRecordsRef.current.set(updated.id, updated);
+        return updated;
+      }
+      return r;
     });
+    const cleanRecords = revalidateRecordList(rawNext);
+    recordsRef.current = cleanRecords;
+    setRecords(cleanRecords);
+    persistStateToCloudAndLocal(cleanRecords, operatorsRef.current);
   };
 
   const handleSelectScale = (newScale: ScaleVolume | 'all') => {

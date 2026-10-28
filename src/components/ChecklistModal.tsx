@@ -59,6 +59,13 @@ function getDefaultInoculationDateTime(now: Date = new Date()): {
   };
 }
 
+function parseNumericInput(raw: string, fallback = 0): number {
+  const cleaned = String(raw ?? '').trim().replace(',', '.');
+  if (!cleaned || cleaned === '-' || cleaned === '.') return fallback;
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : fallback;
+}
+
 export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   isOpen,
   onClose,
@@ -84,15 +91,21 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   );
   const [batchId, setBatchId] = useState<string>('');
 
-  // Parameters
-  const [temperature, setTemperature] = useState<number>(30.0);
-  const [dissolvedOxygen, setDissolvedOxygen] = useState<number>(21.0);
+  // String inputs for smooth typing (supports 1, 2, or 3+ decimal places without browser step rejection)
+  const [tempInput, setTempInput] = useState<string>('30');
+  const [doInput, setDoInput] = useState<string>('21');
   const [noDOProbe, setNoDOProbe] = useState<boolean>(false);
-  const [agitation, setAgitation] = useState<number>(95);
-  const [pressure, setPressure] = useState<number>(0.1);
-  const [airflow, setAirflow] = useState<number>(85);
+  const [agitInput, setAgitInput] = useState<string>('95');
+  const [presInput, setPresInput] = useState<string>('0.1');
+  const [airInput, setAirInput] = useState<string>('85');
   const [notes, setNotes] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
+
+  const temperature = parseNumericInput(tempInput, 0);
+  const dissolvedOxygen = parseNumericInput(doInput, 0);
+  const agitation = parseNumericInput(agitInput, 0);
+  const pressure = parseNumericInput(presInput, 0);
+  const airflow = parseNumericInput(airInput, 0);
 
   const scale = getScaleByReactorId(reactorId);
   const specs = SCALE_SPECS[scale];
@@ -152,12 +165,12 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       }
 
       setBatchId(editingRecord.batchId || '');
-      setTemperature(editingRecord.temperature);
-      setDissolvedOxygen(editingRecord.dissolvedOxygen);
+      setTempInput(String(editingRecord.temperature ?? 30));
+      setDoInput(String(editingRecord.dissolvedOxygen ?? 21));
       setNoDOProbe(Boolean(editingRecord.noDOProbe));
-      setAgitation(editingRecord.agitation);
-      setPressure(editingRecord.pressure);
-      setAirflow(editingRecord.airflow);
+      setAgitInput(String(editingRecord.agitation ?? 95));
+      setPresInput(String(editingRecord.pressure ?? 0.1));
+      setAirInput(String(editingRecord.airflow ?? 85));
       setNotes(editingRecord.notes || '');
       setErrorMsg('');
     } else {
@@ -168,12 +181,12 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
 
       const sc = getScaleByReactorId(initialReactorId);
       const sp = SCALE_SPECS[sc];
-      setTemperature(30.0);
-      setDissolvedOxygen(21.0);
+      setTempInput('30');
+      setDoInput('21');
       setNoDOProbe(false);
-      setAgitation(sp.agitation.target);
-      setPressure(sp.pressure.target);
-      setAirflow(sp.airflow.target);
+      setAgitInput(String(sp.agitation.target));
+      setPresInput(String(sp.pressure.target));
+      setAirInput(String(sp.airflow.target));
 
       const resolved = resolveInoculationForReactor(initialReactorId, now);
       setInoculationDate(resolved.inocDate);
@@ -200,9 +213,9 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     setReactorId(newReactorId);
     const sc = getScaleByReactorId(newReactorId);
     const sp = SCALE_SPECS[sc];
-    setAgitation(sp.agitation.target);
-    setPressure(sp.pressure.target);
-    setAirflow(sp.airflow.target);
+    setAgitInput(String(sp.agitation.target));
+    setPresInput(String(sp.pressure.target));
+    setAirInput(String(sp.airflow.target));
 
     const checkDateObj = new Date(`${date}T${time}:00`);
     const refDate = isNaN(checkDateObj.getTime()) ? new Date() : checkDateObj;
@@ -339,10 +352,26 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       return;
     }
 
+    if (!date || !time || !inoculationDate || !inoculationTime) {
+      setErrorMsg('Por favor, preencha a data e o horário do check e da inoculação.');
+      return;
+    }
+
     if (isInoculationAfterCheck) {
       setErrorMsg(
         'A Data/Horário de Inoculação não pode ser posterior à Data/Horário do Checklist atual.'
       );
+      return;
+    }
+
+    if (
+      !tempInput.trim() ||
+      !presInput.trim() ||
+      !agitInput.trim() ||
+      !airInput.trim() ||
+      (!noDOProbe && !doInput.trim())
+    ) {
+      setErrorMsg('Por favor, preencha todos os parâmetros numéricos obrigatórios do processo.');
       return;
     }
 
@@ -353,13 +382,8 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       return;
     }
 
-    // Se for um nome novo, incrementa automaticamente na lista suspensa
-    if (onAddOperator && finalOperator) {
-      onAddOperator(finalOperator);
-    }
-
     const newRecord: ChecklistRecord = {
-      id: editingRecord ? editingRecord.id : `chk-${Date.now()}`,
+      id: editingRecord ? editingRecord.id : `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       reactorId,
       reactorTag: `BR-${String(reactorId).padStart(2, '0')}`,
       scale,
@@ -392,6 +416,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
 
     setIsCustomOperatorMode(false);
     setCustomOperatorInput('');
+    setErrorMsg('');
     onSave(newRecord);
     onClose();
   };
@@ -424,7 +449,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-6">
           {/* Section 1: Identification & Metadata */}
           <div>
             <h3 className="text-xs font-bold text-slate-400 mb-3">
@@ -683,10 +708,14 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </div>
                 <input
                   type="number"
-                  step="0.1"
+                  step="any"
+                  inputMode="decimal"
                   required
-                  value={temperature}
-                  onChange={(e) => setTemperature(parseFloat(e.target.value) || 0)}
+                  value={tempInput}
+                  onChange={(e) => {
+                    setTempInput(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
                   className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.tempSemaphore)}`}
                 />
                 <div className="mt-2 flex items-center justify-between text-[11px]">
@@ -705,10 +734,14 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="any"
+                  inputMode="decimal"
                   required
-                  value={pressure}
-                  onChange={(e) => setPressure(parseFloat(e.target.value) || 0)}
+                  value={presInput}
+                  onChange={(e) => {
+                    setPresInput(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
                   className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.presSemaphore)}`}
                 />
                 <div className="mt-2 flex items-center justify-between text-[11px]">
@@ -727,10 +760,14 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </div>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
+                  inputMode="decimal"
                   required
-                  value={agitation}
-                  onChange={(e) => setAgitation(parseFloat(e.target.value) || 0)}
+                  value={agitInput}
+                  onChange={(e) => {
+                    setAgitInput(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
                   className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.agitSemaphore)}`}
                 />
                 <div className="mt-2 flex items-center justify-between text-[11px]">
@@ -747,10 +784,14 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 </div>
                 <input
                   type="number"
-                  step="1"
+                  step="any"
+                  inputMode="decimal"
                   required
-                  value={airflow}
-                  onChange={(e) => setAirflow(parseFloat(e.target.value) || 0)}
+                  value={airInput}
+                  onChange={(e) => {
+                    setAirInput(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
                   className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.airSemaphore)}`}
                 />
                 <div className="mt-2 flex items-center justify-between text-[11px]">
@@ -774,7 +815,10 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                     <input
                       type="checkbox"
                       checked={noDOProbe}
-                      onChange={(e) => setNoDOProbe(e.target.checked)}
+                      onChange={(e) => {
+                        setNoDOProbe(e.target.checked);
+                        if (errorMsg) setErrorMsg('');
+                      }}
                       className="rounded border-slate-600 bg-slate-900 text-cyan-400 focus:ring-cyan-500 w-3.5 h-3.5 accent-cyan-400 cursor-pointer"
                     />
                     Sem sonda
@@ -789,10 +833,14 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 ) : (
                   <input
                     type="number"
-                    step="0.05"
+                    step="any"
+                    inputMode="decimal"
                     required
-                    value={dissolvedOxygen}
-                    onChange={(e) => setDissolvedOxygen(parseFloat(e.target.value) || 0)}
+                    value={doInput}
+                    onChange={(e) => {
+                      setDoInput(e.target.value);
+                      if (errorMsg) setErrorMsg('');
+                    }}
                     className={`w-full text-sm font-mono font-bold border rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 ${getSemaphoreInputStyle(validation.doSemaphore)}`}
                   />
                 )}

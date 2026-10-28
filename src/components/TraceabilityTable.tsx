@@ -169,11 +169,14 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
     (r) => Boolean(r.archived) === (lifecycleTab === 'archived') && !r.isFullyNominal
   ).length;
 
-  const toggleExpandBatch = (key: string) => {
-    setExpandedBatches((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+  const toggleExpandBatch = (key: string, defaultExpanded = false) => {
+    setExpandedBatches((prev) => {
+      const current = prev[key] !== undefined ? prev[key] : defaultExpanded;
+      return {
+        ...prev,
+        [key]: !current,
+      };
+    });
   };
 
   const getCellSemaphoreStyle = (level: SemaphoreLevel) => {
@@ -514,8 +517,9 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               Nenhuma batelada encontrada para os filtros selecionados nesta aba.
             </div>
           ) : (
-            batchGroups.map((group) => {
-              const isExpanded = Boolean(expandedBatches[group.key]);
+            batchGroups.map((group, idx) => {
+              const isExpanded =
+                expandedBatches[group.key] !== undefined ? expandedBatches[group.key] : idx === 0;
               const currentPage = batchPageMap[group.key] || 1;
               const totalBatchPages = Math.max(1, Math.ceil(group.records.length / ITEMS_PER_PAGE));
               const safePage = Math.min(currentPage, totalBatchPages);
@@ -537,7 +541,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                 >
                   {/* Accordion Header Row */}
                   <div
-                    onClick={() => toggleExpandBatch(group.key)}
+                    onClick={() => toggleExpandBatch(group.key, idx === 0)}
                     className="cursor-pointer px-4 py-3.5 bg-[#131C2E]/90 hover:bg-[#172238] transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-3"
                   >
                     <div className="flex flex-wrap items-center gap-3">

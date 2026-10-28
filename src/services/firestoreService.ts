@@ -1,8 +1,15 @@
 import { db, doc, onSnapshot, setDoc, serverTimestamp } from '../lib/firebase';
 
-// Remove qualquer campo `undefined` recursivamente
+// Remove qualquer campo `undefined` ou `NaN` recursivamente para evitar erros no Firestore
 export function sanitizeForFirestore<T>(data: T): T {
-  return JSON.parse(JSON.stringify(data));
+  return JSON.parse(
+    JSON.stringify(data, (_key, value) => {
+      if (typeof value === 'number' && !Number.isFinite(value)) {
+        return 0;
+      }
+      return value;
+    })
+  );
 }
 
 // 1. Escutar dados em tempo real da nuvem
@@ -12,17 +19,15 @@ export function subscribeToCloudDoc<T>(
   onUpdate: (data: T | null, fromCache: boolean) => void,
   onError: (error: Error) => void
 ) {
-  let isFirstSnapshot = true;
   const docRef = doc(db, collectionName, docId);
 
   return onSnapshot(
     docRef,
     (snapshot) => {
-      // Ignora o eco das nossas próprias gravações locais após o primeiro carregamento
-      if (!isFirstSnapshot && snapshot.metadata.hasPendingWrites) {
+      // Ignora o eco das próprias gravações pendentes locais (o estado local já é atualizado sincronamente)
+      if (snapshot.metadata.hasPendingWrites) {
         return;
       }
-      isFirstSnapshot = false;
 
       if (snapshot.exists()) {
         onUpdate(snapshot.data() as T, snapshot.metadata.fromCache);
@@ -58,3 +63,4 @@ export async function saveToCloudDoc<T extends Record<string, any>>(
     { merge: true }
   );
 }
+
