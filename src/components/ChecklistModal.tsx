@@ -82,7 +82,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   const [inoculationTime, setInoculationTime] = useState<string>(
     () => getDefaultInoculationDateTime().inocTime
   );
-  const [batchId, setBatchId] = useState<string>('L-100-24B');
+  const [batchId, setBatchId] = useState<string>('');
 
   // Parameters
   const [temperature, setTemperature] = useState<number>(30.0);
@@ -178,7 +178,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       const resolved = resolveInoculationForReactor(initialReactorId, now);
       setInoculationDate(resolved.inocDate);
       setInoculationTime(resolved.inocTime);
-      setBatchId(resolved.batch);
+      setBatchId('');
       setNotes('');
       setErrorMsg('');
     }
@@ -209,7 +209,6 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     const resolved = resolveInoculationForReactor(newReactorId, refDate);
     setInoculationDate(resolved.inocDate);
     setInoculationTime(resolved.inocTime);
-    setBatchId(resolved.batch);
     setErrorMsg('');
   };
 
@@ -328,6 +327,11 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     const finalOperator =
       (isCustomOperatorMode ? customOperatorInput.trim() : operatorName.trim()) || 'Operador';
 
+    if (!batchId.trim()) {
+      setErrorMsg('Por favor, preencha o Numero da OP (campo obrigatório).');
+      return;
+    }
+
     if (isCustomOperatorMode && !customOperatorInput.trim()) {
       setErrorMsg(
         'Por favor, digite o nome do novo operador ou selecione um nome da lista suspensa.'
@@ -359,7 +363,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
       reactorId,
       reactorTag: `BR-${String(reactorId).padStart(2, '0')}`,
       scale,
-      batchId: batchId || `L-${scale}-${Date.now().toString().slice(-4)}`,
+      batchId: batchId.trim(),
       operatorName: finalOperator,
       date,
       time,
@@ -575,10 +579,13 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
                 <input
                   type="text"
                   value={batchId}
-                  onChange={(e) => setBatchId(e.target.value)}
-                  placeholder="Ex: L-100-24B"
+                  onChange={(e) => {
+                    setBatchId(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
+                  placeholder="Digite o número da OP..."
                   required
-                  className="w-full text-xs font-mono bg-[#0F1624] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  className="w-full text-xs font-mono bg-[#0F1624] border border-slate-700 rounded-lg px-3 py-2 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 />
               </div>
 

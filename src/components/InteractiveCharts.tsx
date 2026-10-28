@@ -89,6 +89,48 @@ const PARAM_CONFIGS: Record<ParameterKey, ParamConfig> = {
   },
 };
 
+const ALL_SCALES_ORDER: ScaleVolume[] = ['100L', '500L', '3000L', '5000L'];
+
+const SCALE_VISUAL_CONFIG: Record<
+  ScaleVolume,
+  {
+    color: string;
+    fill: string;
+    textFill: string;
+    badgeBg: string;
+    label: string;
+  }
+> = {
+  '100L': {
+    color: '#38BDF8', // Azul Ciano (Sky-400)
+    fill: 'rgba(56, 189, 248, 0.13)',
+    textFill: '#7DD3FC',
+    badgeBg: 'bg-sky-400',
+    label: '100L',
+  },
+  '500L': {
+    color: '#10B981', // Verde Esmeralda (Emerald-500)
+    fill: 'rgba(16, 185, 129, 0.13)',
+    textFill: '#6EE7B7',
+    badgeBg: 'bg-emerald-500',
+    label: '500L',
+  },
+  '3000L': {
+    color: '#F59E0B', // Âmbar / Laranja (Amber-500)
+    fill: 'rgba(245, 158, 11, 0.13)',
+    textFill: '#FCD34D',
+    badgeBg: 'bg-amber-500',
+    label: '3000L',
+  },
+  '5000L': {
+    color: '#A855F7', // Roxo / Violeta (Purple-500)
+    fill: 'rgba(168, 85, 247, 0.13)',
+    textFill: '#D8B4FE',
+    badgeBg: 'bg-purple-500',
+    label: '5000L',
+  },
+};
+
 export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   records,
   scale,
@@ -199,11 +241,24 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
   });
 
   const sortedRecords = plottedRecords.map((item) => item.record);
+  const isAllScalesView = selectedScale === 'all' && selectedReactorId === 'all';
 
   const currentConfig = PARAM_CONFIGS[activeTab];
   const target = currentConfig.targetGetter(scale);
   const delta = currentConfig.deltaGetter(scale);
-  const [baseDomainMin, baseDomainMax] = currentConfig.minMaxDomain(scale);
+
+  // Calcula o domínio base do eixo Y: quando em "Todas as Escalas", abrange os limites mín/máx de todas as 4 escalas
+  // para que nenhuma leitura nominal pareça um falso outlier fora do gráfico
+  const [baseDomainMin, baseDomainMax] = (() => {
+    if (!isAllScalesView) {
+      return currentConfig.minMaxDomain(scale);
+    }
+    if (activeTab === 'pressure') return [0.0, 0.62] as [number, number];
+    if (activeTab === 'agitation') return [75, 220] as [number, number];
+    if (activeTab === 'airflow') return [40, 860] as [number, number];
+    if (activeTab === 'dissolvedOxygen') return [12, 25] as [number, number];
+    return [26, 34] as [number, number];
+  })();
 
   // Dynamically expand Y-axis domain if any measured value is outside the base range
   const measuredValues = sortedRecords.map((r) => currentConfig.valGetter(r));
@@ -274,19 +329,15 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
 
   const polylinePoints = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
-  // References for DO Phases (100L and 5000L)
-  const doPhases = scale === '100L' ? DO_REFERENCE_100L : scale === '5000L' ? DO_REFERENCE_5000L : null;
-
-  // Build stepped/connected Max and Min limit lines for O2 across the 4 phases
-  let doMaxLinePoints = '';
-  let doMinLinePoints = '';
-  let doBandPolygonPoints = '';
-
-  if (doPhases && doPhases.length > 0) {
+  // Build helper for DO 4-phase polygon and min/max lines for a given phase list
+  const buildDOPhaseGeometry = (phases: typeof DO_REFERENCE_100L | null) => {
+    if (!phases || phases.length === 0) {
+      return { maxLine: '', minLine: '', bandPolygon: '' };
+    }
     const maxCoords: { x: number; y: number }[] = [];
     const minCoords: { x: number; y: number }[] = [];
 
-    doPhases.forEach((phase) => {
+    phases.forEach((phase) => {
       const x1 = scaleX(phase.minHours);
       const x2 = scaleX(phase.maxHours);
       const yMax = scaleY(Math.max(phase.o2ProbeMin, phase.o2ProbeMax));
@@ -296,17 +347,24 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       minCoords.push({ x: x1, y: yMin }, { x: x2, y: yMin });
     });
 
-    doMaxLinePoints = maxCoords.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
-    doMinLinePoints = minCoords.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
-
+    const maxLine = maxCoords.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
+    const minLine = minCoords.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
     const polygonCoords = [...maxCoords, ...[...minCoords].reverse()];
-    doBandPolygonPoints = polygonCoords.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
-  }
+    const bandPolygon = polygonCoords.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
 
-  // Hover point DO phase lookup
+    return { maxLine, minLine, bandPolygon };
+  };
+
+  // References for DO Phases (100L and 5000L)
+  const doPhases = scale === '100L' ? DO_REFERENCE_100L : scale === '5000L' ? DO_REFERENCE_5000L : null;
+  const singleDOGeom = buildDOPhaseGeometry(doPhases);
+  const do100LGeom = buildDOPhaseGeometry(DO_REFERENCE_100L);
+  const do5000LGeom = buildDOPhaseGeometry(DO_REFERENCE_5000L);
+
+  // Hover point DO phase lookup (usa a escala real do registro sob o mouse)
   const hoveredDOPhase =
     hoveredPoint && activeTab === 'dissolvedOxygen'
-      ? getDOPhaseForHours(scale, hoveredPoint.record.processHours)
+      ? getDOPhaseForHours(hoveredPoint.record.scale, hoveredPoint.record.processHours)
       : null;
 
   return (
@@ -456,9 +514,17 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           <span className="text-slate-400 block">Alvo (Setpoint)</span>
           <span className="text-sm font-bold font-mono text-slate-100">
             {activeTab === 'dissolvedOxygen'
-              ? doPhases
+              ? isAllScalesView
+                ? 'Curvas 100L e 5000L'
+                : doPhases
                 ? 'Curva 4 Fases'
                 : 'Livre'
+              : isAllScalesView && activeTab !== 'temperature'
+              ? activeTab === 'pressure'
+                ? '0.10 / 0.20 / 0.30 / 0.50 bar'
+                : activeTab === 'agitation'
+                ? '95 / 117 / 200 RPM'
+                : '85 / 220 / 800 L/min'
               : `${target} ${currentConfig.unit}`}
           </span>
         </div>
@@ -472,25 +538,29 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           <span className="text-slate-400 block">Tolerância / Limites</span>
           <span className="text-sm font-bold font-mono text-slate-100">
             {activeTab === 'dissolvedOxygen'
-              ? doPhases
-                ? 'Linhas Mín e Máx por Fase'
+              ? isAllScalesView || doPhases
+                ? 'Linhas Mín e Máx por Escala/Fase'
                 : 'Sem limite'
               : delta !== null
-              ? `± ${delta} ${currentConfig.unit}`
-              : 'Sem delta (Fixo)'}
+              ? `± ${delta} ${currentConfig.unit} (Por Escala)`
+              : 'Sem delta (Alvo Fixo por Escala)'}
           </span>
         </div>
         <div>
           <span className="text-slate-400 block">Faixa Nominal</span>
           <span className="text-sm font-bold font-mono text-slate-100">
-            {activeTab === 'dissolvedOxygen'
+            {isAllScalesView
+              ? activeTab === 'temperature'
+                ? '28.0 a 32.0 °C (Todas)'
+                : 'Faixas Coloridas por Escala'
+              : activeTab === 'dissolvedOxygen'
               ? scale === '100L'
                 ? '14.28% a 22.36%'
                 : scale === '5000L'
                 ? '16.29% a 23.03%'
                 : 'Registro Livre'
               : delta !== null
-              ? `${(target - delta).toFixed(1)} a ${(target + delta).toFixed(1)} ${currentConfig.unit}`
+              ? `${(target - delta).toFixed(activeTab === 'pressure' ? 2 : 1)} a ${(target + delta).toFixed(activeTab === 'pressure' ? 2 : 1)} ${currentConfig.unit}`
               : `${target} ${currentConfig.unit}`}
           </span>
         </div>
@@ -558,11 +628,11 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             );
           })}
 
-          {/* DO Phase Columns + Min & Max Limit Lines for 100L or 5000L */}
-          {activeTab === 'dissolvedOxygen' && doPhases && (
+          {/* DO Phase Columns + Min & Max Limit Lines */}
+          {activeTab === 'dissolvedOxygen' && (isAllScalesView || doPhases) && (
             <g>
               {/* Background Phase Columns */}
-              {doPhases.map((phase, idx) => {
+              {(doPhases || DO_REFERENCE_100L).map((phase, idx) => {
                 const xStart = scaleX(phase.minHours);
                 const xEnd = scaleX(phase.maxHours);
                 const w = Math.max(0, xEnd - xStart);
@@ -584,7 +654,6 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                       strokeWidth="0.8"
                       strokeDasharray="3,3"
                     />
-                    {/* Phase Header Label */}
                     <text
                       x={xStart + w / 2}
                       y={padding.top + 14}
@@ -596,71 +665,322 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                       {phase.phase} ({phase.intervalHours})
                     </text>
 
-                    {/* Phase Max value label directly above Max line segment */}
-                    <text
-                      x={xStart + w / 2}
-                      y={Math.max(padding.top + 26, yMax - 6)}
-                      textAnchor="middle"
-                      fontSize="8.5"
-                      fontWeight="700"
-                      fill="#2DD4BF"
-                    >
-                      Máx: {Math.max(phase.o2ProbeMin, phase.o2ProbeMax).toFixed(2)}%
-                    </text>
-
-                    {/* Phase Min value label directly below Min line segment */}
-                    <text
-                      x={xStart + w / 2}
-                      y={Math.min(padding.top + chartH - 5, yMin + 12)}
-                      textAnchor="middle"
-                      fontSize="8.5"
-                      fontWeight="700"
-                      fill="#FBBF24"
-                    >
-                      Mín: {Math.min(phase.o2ProbeMin, phase.o2ProbeMax).toFixed(2)}%
-                    </text>
+                    {!isAllScalesView && (
+                      <>
+                        <text
+                          x={xStart + w / 2}
+                          y={Math.max(padding.top + 26, yMax - 6)}
+                          textAnchor="middle"
+                          fontSize="8.5"
+                          fontWeight="700"
+                          fill="#2DD4BF"
+                        >
+                          Máx: {Math.max(phase.o2ProbeMin, phase.o2ProbeMax).toFixed(2)}%
+                        </text>
+                        <text
+                          x={xStart + w / 2}
+                          y={Math.min(padding.top + chartH - 5, yMin + 12)}
+                          textAnchor="middle"
+                          fontSize="8.5"
+                          fontWeight="700"
+                          fill="#FBBF24"
+                        >
+                          Mín: {Math.min(phase.o2ProbeMin, phase.o2ProbeMax).toFixed(2)}%
+                        </text>
+                      </>
+                    )}
                   </g>
                 );
               })}
 
-              {/* Shaded Corridor between Min and Max O2 Lines */}
-              {doBandPolygonPoints && (
-                <polygon points={doBandPolygonPoints} fill="url(#doTunnelGradientDark)" />
-              )}
+              {isAllScalesView ? (
+                <>
+                  {/* 100L DO Corridor (Cyan) */}
+                  {do100LGeom.bandPolygon && (
+                    <polygon points={do100LGeom.bandPolygon} fill={SCALE_VISUAL_CONFIG['100L'].fill} />
+                  )}
+                  {do100LGeom.maxLine && (
+                    <polyline
+                      fill="none"
+                      stroke={SCALE_VISUAL_CONFIG['100L'].color}
+                      strokeWidth="1.8"
+                      strokeDasharray="6,3"
+                      points={do100LGeom.maxLine}
+                    />
+                  )}
+                  {do100LGeom.minLine && (
+                    <polyline
+                      fill="none"
+                      stroke={SCALE_VISUAL_CONFIG['100L'].color}
+                      strokeWidth="1.8"
+                      strokeDasharray="3,3"
+                      points={do100LGeom.minLine}
+                    />
+                  )}
+                  <text
+                    x={padding.left + 8}
+                    y={scaleY(22.36) - 5}
+                    fontSize="8.5"
+                    fontWeight="700"
+                    fill={SCALE_VISUAL_CONFIG['100L'].textFill}
+                  >
+                    100L: Faixa O2 (14.28% a 22.36%)
+                  </text>
 
-              {/* LINE 1: LIMITE MÁXIMO DE O2 (Teal Dashed Line) */}
-              {doMaxLinePoints && (
-                <polyline
-                  fill="none"
-                  stroke="#2DD4BF"
-                  strokeWidth="2"
-                  strokeDasharray="6,3"
-                  points={doMaxLinePoints}
-                />
-              )}
-
-              {/* LINE 2: LIMITE MÍNIMO DE O2 (Amber Dashed Line) */}
-              {doMinLinePoints && (
-                <polyline
-                  fill="none"
-                  stroke="#FBBF24"
-                  strokeWidth="2"
-                  strokeDasharray="6,3"
-                  points={doMinLinePoints}
-                />
+                  {/* 5000L DO Corridor (Purple) */}
+                  {do5000LGeom.bandPolygon && (
+                    <polygon points={do5000LGeom.bandPolygon} fill={SCALE_VISUAL_CONFIG['5000L'].fill} />
+                  )}
+                  {do5000LGeom.maxLine && (
+                    <polyline
+                      fill="none"
+                      stroke={SCALE_VISUAL_CONFIG['5000L'].color}
+                      strokeWidth="1.8"
+                      strokeDasharray="6,3"
+                      points={do5000LGeom.maxLine}
+                    />
+                  )}
+                  {do5000LGeom.minLine && (
+                    <polyline
+                      fill="none"
+                      stroke={SCALE_VISUAL_CONFIG['5000L'].color}
+                      strokeWidth="1.8"
+                      strokeDasharray="3,3"
+                      points={do5000LGeom.minLine}
+                    />
+                  )}
+                  <text
+                    x={padding.left + chartW - 8}
+                    y={scaleY(23.03) - 5}
+                    textAnchor="end"
+                    fontSize="8.5"
+                    fontWeight="700"
+                    fill={SCALE_VISUAL_CONFIG['5000L'].textFill}
+                  >
+                    5000L: Faixa O2 (16.29% a 23.03%)
+                  </text>
+                </>
+              ) : (
+                <>
+                  {singleDOGeom.bandPolygon && (
+                    <polygon points={singleDOGeom.bandPolygon} fill="url(#doTunnelGradientDark)" />
+                  )}
+                  {singleDOGeom.maxLine && (
+                    <polyline
+                      fill="none"
+                      stroke="#2DD4BF"
+                      strokeWidth="2"
+                      strokeDasharray="6,3"
+                      points={singleDOGeom.maxLine}
+                    />
+                  )}
+                  {singleDOGeom.minLine && (
+                    <polyline
+                      fill="none"
+                      stroke="#FBBF24"
+                      strokeWidth="2"
+                      strokeDasharray="6,3"
+                      points={singleDOGeom.minLine}
+                    />
+                  )}
+                </>
               )}
             </g>
           )}
 
-          {/* Tolerance Band (Delta) for non-DO parameters */}
-          {activeTab !== 'dissolvedOxygen' && delta !== null && yUpper !== null && yLower !== null && (
+          {/* Multi-Scale Colored Limit Bands & Target Lines when viewing ALL Scales */}
+          {activeTab !== 'dissolvedOxygen' && isAllScalesView && (
+            <g>
+              {activeTab === 'temperature' ? (
+                /* Temperatura: Mesma faixa universal (28 a 32 °C), destacada com as 4 cores das escalas */
+                <g>
+                  <rect
+                    x={padding.left}
+                    y={scaleY(32)}
+                    width={chartW}
+                    height={Math.abs(scaleY(28) - scaleY(32))}
+                    fill="url(#bandGradientDark)"
+                  />
+                  <line
+                    x1={padding.left}
+                    y1={scaleY(32)}
+                    x2={padding.left + chartW}
+                    y2={scaleY(32)}
+                    stroke="#38BDF8"
+                    strokeWidth="1.4"
+                    strokeDasharray="5,3"
+                  />
+                  <text
+                    x={padding.left + chartW - 6}
+                    y={scaleY(32) - 5}
+                    textAnchor="end"
+                    fontSize="8.5"
+                    fontWeight="700"
+                    fill="#7DD3FC"
+                  >
+                    Máx (100L · 500L · 3000L · 5000L): 32.0 °C
+                  </text>
+                  <line
+                    x1={padding.left}
+                    y1={scaleY(30)}
+                    x2={padding.left + chartW}
+                    y2={scaleY(30)}
+                    stroke="#E2E8F0"
+                    strokeWidth="1.3"
+                    strokeDasharray="4,4"
+                    strokeOpacity="0.8"
+                  />
+                  <text
+                    x={padding.left + 8}
+                    y={scaleY(30) - 5}
+                    fontSize="9"
+                    fontWeight="600"
+                    fill="#F8FAFC"
+                  >
+                    Alvo Universal: 30.0 °C
+                  </text>
+                  <line
+                    x1={padding.left}
+                    y1={scaleY(28)}
+                    x2={padding.left + chartW}
+                    y2={scaleY(28)}
+                    stroke="#10B981"
+                    strokeWidth="1.4"
+                    strokeDasharray="5,3"
+                  />
+                  <text
+                    x={padding.left + chartW - 6}
+                    y={scaleY(28) + 12}
+                    textAnchor="end"
+                    fontSize="8.5"
+                    fontWeight="700"
+                    fill="#6EE7B7"
+                  >
+                    Mín (100L · 500L · 3000L · 5000L): 28.0 °C
+                  </text>
+                </g>
+              ) : (
+                /* Pressão, Agitação e Vazão de Ar: Faixas Mín/Máx e Alvos coloridos por Escala */
+                ALL_SCALES_ORDER.map((sc, sIdx) => {
+                  const vCfg = SCALE_VISUAL_CONFIG[sc];
+                  const scTarget = currentConfig.targetGetter(sc);
+                  const scDelta = currentConfig.deltaGetter(sc);
+                  const yTgt = scaleY(scTarget);
+
+                  // Evita sobrepor o texto de 3000L e 5000L quando possuem o mesmo valor nominal (Agitação 200 RPM / Vazão 800 L/min)
+                  const isShared3000And5000 =
+                    (activeTab === 'agitation' || activeTab === 'airflow') &&
+                    (sc === '3000L' || sc === '5000L');
+
+                  if (scDelta !== null) {
+                    const maxVal = scTarget + scDelta;
+                    const minVal = scTarget - scDelta;
+                    const yMax = scaleY(maxVal);
+                    const yMin = scaleY(minVal);
+                    const decimals = activeTab === 'pressure' ? 2 : 0;
+
+                    return (
+                      <g key={`multiscale-band-${sc}`}>
+                        {/* Shaded Band for this Scale */}
+                        <rect
+                          x={padding.left}
+                          y={yMax}
+                          width={chartW}
+                          height={Math.max(2, Math.abs(yMin - yMax))}
+                          fill={vCfg.fill}
+                        />
+                        {/* Max Limit Line */}
+                        <line
+                          x1={padding.left}
+                          y1={yMax}
+                          x2={padding.left + chartW}
+                          y2={yMax}
+                          stroke={vCfg.color}
+                          strokeWidth="1.4"
+                          strokeDasharray={sc === '5000L' && isShared3000And5000 ? '2,4' : '5,3'}
+                          strokeOpacity="0.9"
+                        />
+                        {/* Min Limit Line */}
+                        <line
+                          x1={padding.left}
+                          y1={yMin}
+                          x2={padding.left + chartW}
+                          y2={yMin}
+                          stroke={vCfg.color}
+                          strokeWidth="1.4"
+                          strokeDasharray={sc === '5000L' && isShared3000And5000 ? '2,4' : '5,3'}
+                          strokeOpacity="0.9"
+                        />
+                        {/* Subtle center target line */}
+                        <line
+                          x1={padding.left}
+                          y1={yTgt}
+                          x2={padding.left + chartW}
+                          y2={yTgt}
+                          stroke={vCfg.color}
+                          strokeWidth="0.8"
+                          strokeDasharray="2,4"
+                          strokeOpacity="0.55"
+                        />
+                        {/* Scale Label with Min & Max */}
+                        {(!isShared3000And5000 || sc === '3000L') && (
+                          <text
+                            x={sIdx % 2 === 0 ? padding.left + chartW - 8 : padding.left + 8}
+                            y={yMax + Math.abs(yMin - yMax) / 2 + 3}
+                            textAnchor={sIdx % 2 === 0 ? 'end' : 'start'}
+                            fontSize="8.5"
+                            fontWeight="700"
+                            fill={vCfg.textFill}
+                          >
+                            {isShared3000And5000 ? '3000L / 5000L' : sc}: Mín {minVal.toFixed(decimals)} · Alvo{' '}
+                            {scTarget.toFixed(decimals)} · Máx {maxVal.toFixed(decimals)} {currentConfig.unit}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  }
+
+                  // Agitação (Sem delta - Alvo Fixo por Escala)
+                  return (
+                    <g key={`multiscale-fixed-${sc}`}>
+                      <line
+                        x1={padding.left}
+                        y1={yTgt}
+                        x2={padding.left + chartW}
+                        y2={yTgt}
+                        stroke={vCfg.color}
+                        strokeWidth="1.6"
+                        strokeDasharray={sc === '5000L' ? '3,5' : '6,3'}
+                        strokeOpacity="0.9"
+                      />
+                      {(!isShared3000And5000 || sc === '3000L') && (
+                        <text
+                          x={sIdx % 2 === 0 ? padding.left + chartW - 8 : padding.left + 8}
+                          y={yTgt - 5}
+                          textAnchor={sIdx % 2 === 0 ? 'end' : 'start'}
+                          fontSize="8.5"
+                          fontWeight="700"
+                          fill={vCfg.textFill}
+                        >
+                          {isShared3000And5000 ? '3000L / 5000L' : sc}: Alvo Fixo {scTarget} {currentConfig.unit}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })
+              )}
+            </g>
+          )}
+
+          {/* Single-Scale Tolerance Band (Delta) for non-DO parameters */}
+          {activeTab !== 'dissolvedOxygen' && !isAllScalesView && delta !== null && yUpper !== null && yLower !== null && (
             <g>
               <rect
                 x={padding.left}
                 y={yUpper}
                 width={chartW}
                 height={Math.abs(yLower - yUpper)}
-                fill="url(#bandGradientDark)"
+                fill={SCALE_VISUAL_CONFIG[scale].fill}
               />
               {/* Upper tolerance line */}
               <line
@@ -668,10 +988,10 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 y1={yUpper}
                 x2={padding.left + chartW}
                 y2={yUpper}
-                stroke="#38BDF8"
-                strokeWidth="1.2"
+                stroke={SCALE_VISUAL_CONFIG[scale].color}
+                strokeWidth="1.4"
                 strokeDasharray="4,4"
-                strokeOpacity="0.65"
+                strokeOpacity="0.85"
               />
               <text
                 x={padding.left + chartW - 6}
@@ -679,9 +999,9 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 textAnchor="end"
                 fontSize="9"
                 fontWeight="600"
-                fill="#38BDF8"
+                fill={SCALE_VISUAL_CONFIG[scale].textFill}
               >
-                Limite Sup: {(target + delta).toFixed(1)} {currentConfig.unit}
+                Limite Sup ({scale}): {(target + delta).toFixed(activeTab === 'pressure' ? 2 : 1)} {currentConfig.unit}
               </text>
 
               {/* Lower tolerance line */}
@@ -690,10 +1010,10 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 y1={yLower}
                 x2={padding.left + chartW}
                 y2={yLower}
-                stroke="#38BDF8"
-                strokeWidth="1.2"
+                stroke={SCALE_VISUAL_CONFIG[scale].color}
+                strokeWidth="1.4"
                 strokeDasharray="4,4"
-                strokeOpacity="0.65"
+                strokeOpacity="0.85"
               />
               <text
                 x={padding.left + chartW - 6}
@@ -701,15 +1021,15 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 textAnchor="end"
                 fontSize="9"
                 fontWeight="600"
-                fill="#38BDF8"
+                fill={SCALE_VISUAL_CONFIG[scale].textFill}
               >
-                Limite Inf: {(target - delta).toFixed(1)} {currentConfig.unit}
+                Limite Inf ({scale}): {(target - delta).toFixed(activeTab === 'pressure' ? 2 : 1)} {currentConfig.unit}
               </text>
             </g>
           )}
 
-          {/* Target Setpoint Line */}
-          {activeTab !== 'dissolvedOxygen' && (
+          {/* Single-Scale Target Setpoint Line */}
+          {activeTab !== 'dissolvedOxygen' && !isAllScalesView && (
             <g>
               <line
                 x1={padding.left}
@@ -728,13 +1048,13 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 fontWeight="600"
                 fill="#F8FAFC"
               >
-                Alvo (Setpoint): {target} {currentConfig.unit}
+                Alvo ({scale}): {target} {currentConfig.unit}
               </text>
             </g>
           )}
 
-          {/* Average Value Line */}
-          {avgValue !== null && yAvg !== null && (
+          {/* Average Value Line (Exibido quando filtrando uma escala ou tanque único, ou em Temperatura/O2) */}
+          {avgValue !== null && yAvg !== null && (!isAllScalesView || activeTab === 'temperature') && (
             <g>
               <line
                 x1={padding.left}
@@ -759,17 +1079,34 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             </g>
           )}
 
-          {/* Time Series Measured Line */}
-          {points.length > 1 && (
-            <polyline
-              fill="none"
-              stroke={currentConfig.color}
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points={polylinePoints}
-            />
-          )}
+          {/* Time Series Measured Lines: Por Escala quando em "Todas as Escalas", ou linha única quando filtrado */}
+          {isAllScalesView
+            ? ALL_SCALES_ORDER.map((sc) => {
+                const scPoints = points.filter((p) => p.record.scale === sc);
+                if (scPoints.length < 2) return null;
+                const scPoly = scPoints.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                return (
+                  <polyline
+                    key={`poly-${sc}`}
+                    fill="none"
+                    stroke={SCALE_VISUAL_CONFIG[sc].color}
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={scPoly}
+                  />
+                );
+              })
+            : points.length > 1 && (
+                <polyline
+                  fill="none"
+                  stroke={SCALE_VISUAL_CONFIG[scale].color}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points={polylinePoints}
+                />
+              )}
 
           {/* Data Points */}
           {points.map((pt, i) => {
@@ -784,6 +1121,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 ? pt.record.isAirflowNominal
                 : pt.record.isDONominal;
 
+            const scaleColor = SCALE_VISUAL_CONFIG[pt.record.scale]?.color || currentConfig.color;
             const prevPt = i > 0 ? points[i - 1] : null;
             const isCloseToPrev = prevPt ? Math.abs(pt.x - prevPt.x) < 32 : false;
             const showTimeBadge = (points.length <= 24 && !isCloseToPrev) || !isNominal;
@@ -819,7 +1157,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                   cx={pt.x}
                   cy={pt.y}
                   r="4.5"
-                  fill={isNominal ? currentConfig.color : '#F43F5E'}
+                  fill={isNominal ? scaleColor : '#F43F5E'}
                   stroke="#090D16"
                   strokeWidth="2"
                 />
@@ -957,7 +1295,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             >
               <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-1.5 font-mono">
                 <span className="font-semibold text-slate-200">
-                  {hoveredPoint.record.reactorTag} · {hoveredPoint.record.processHours}h
+                  {hoveredPoint.record.reactorTag} ({hoveredPoint.record.scale}) · {hoveredPoint.record.processHours}h
                 </span>
                 <span className="text-cyan-400 font-bold">
                   {hoveredPoint.record.time} ({hoveredPoint.record.date.split('-').reverse().slice(0, 2).join('/')})
@@ -984,7 +1322,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
 
                 {activeTab === 'dissolvedOxygen' && hoveredDOPhase && (
                   <div className="flex justify-between items-center text-slate-300 font-mono">
-                    <span>Limites ({hoveredDOPhase.phase}):</span>
+                    <span>Limites ({hoveredPoint.record.scale} · {hoveredDOPhase.phase}):</span>
                     <span className="text-teal-300">
                       {hoveredDOPhase.o2ProbeMin}% – {hoveredDOPhase.o2ProbeMax}%
                     </span>
@@ -1002,9 +1340,13 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
 
                 {activeTab !== 'dissolvedOxygen' && (
                   <div className="flex justify-between items-center text-slate-400">
-                    <span>Alvo / Delta:</span>
-                    <span className="font-mono">
-                      {target} {delta ? `(±${delta})` : '(Fixo)'} {currentConfig.unit}
+                    <span>Alvo / Delta ({hoveredPoint.record.scale}):</span>
+                    <span className="font-mono text-slate-200">
+                      {currentConfig.targetGetter(hoveredPoint.record.scale)}{' '}
+                      {currentConfig.deltaGetter(hoveredPoint.record.scale) !== null
+                        ? `(±${currentConfig.deltaGetter(hoveredPoint.record.scale)})`
+                        : '(Fixo)'}{' '}
+                      {currentConfig.unit}
                     </span>
                   </div>
                 )}
@@ -1026,7 +1368,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       </div>
 
       {/* Reference note for 500L & 3000L if DO is selected */}
-      {activeTab === 'dissolvedOxygen' && (scale === '500L' || scale === '3000L') && (
+      {activeTab === 'dissolvedOxygen' && !isAllScalesView && (scale === '500L' || scale === '3000L') && (
         <div className="mt-3 p-3 bg-amber-950/40 border border-amber-700/60 rounded-lg text-xs text-amber-200 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
           <span>
@@ -1036,43 +1378,43 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
         </div>
       )}
 
-      {/* Bottom Summary Indicators */}
+      {/* Bottom Summary Indicators & Per-Scale Color Legend */}
       <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
         <div className="flex flex-wrap items-center gap-4">
-          {activeTab === 'dissolvedOxygen' && doPhases ? (
-            <>
-              <div className="flex items-center gap-1.5">
-                <span className="w-4 h-0.5 bg-teal-400 border-b border-dashed border-teal-400 inline-block"></span>
-                <span className="font-medium text-teal-300">Linha Limite Máximo (Tabela O2)</span>
+          {ALL_SCALES_ORDER.map((sc) => {
+            const vCfg = SCALE_VISUAL_CONFIG[sc];
+            const scTgt = currentConfig.targetGetter(sc);
+            const scDlt = currentConfig.deltaGetter(sc);
+            const rangeText =
+              activeTab === 'dissolvedOxygen'
+                ? sc === '100L'
+                  ? '14.28–22.36%'
+                  : sc === '5000L'
+                  ? '16.29–23.03%'
+                  : 'Livre'
+                : scDlt !== null
+                ? `${(scTgt - scDlt).toFixed(activeTab === 'pressure' ? 2 : 0)} a ${(scTgt + scDlt).toFixed(
+                    activeTab === 'pressure' ? 2 : 0
+                  )} ${currentConfig.unit}`
+                : `${scTgt} ${currentConfig.unit}`;
+
+            return (
+              <div key={`legend-${sc}`} className="flex items-center gap-1.5 font-mono">
+                <span
+                  className="w-3 h-2.5 rounded-xs inline-block border"
+                  style={{ backgroundColor: vCfg.fill, borderColor: vCfg.color }}
+                />
+                <span style={{ color: vCfg.textFill }} className="font-bold">
+                  {sc}:
+                </span>
+                <span className="text-slate-300">{rangeText}</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-4 h-0.5 bg-amber-400 border-b border-dashed border-amber-400 inline-block"></span>
-                <span className="font-medium text-amber-300">Linha Limite Mínimo (Tabela O2)</span>
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 bg-slate-200 inline-block"></span>
-              <span>Linha de Alvo (Setpoint)</span>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 bg-purple-400 border-b border-dashed border-purple-400 inline-block"></span>
-            <span className="text-purple-300">Média do Parâmetro</span>
-          </div>
-          {activeTab !== 'dissolvedOxygen' && delta !== null && (
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-2 bg-sky-500/20 border border-sky-400 border-dashed inline-block"></span>
-              <span>Faixa de Tolerância (± Delta)</span>
-            </div>
-          )}
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span>
-            <span>Leitura Nominal</span>
-          </div>
+            );
+          })}
+
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block ring-2 ring-rose-500/40"></span>
-            <span>Desvio (Fora de Spec)</span>
+            <span className="text-rose-300 font-medium">Desvio (Fora de Spec)</span>
           </div>
         </div>
       </div>

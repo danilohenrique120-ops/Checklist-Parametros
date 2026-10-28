@@ -9,7 +9,7 @@ export function sanitizeForFirestore<T>(data: T): T {
 export function subscribeToCloudDoc<T>(
   collectionName: string,
   docId: string,
-  onUpdate: (data: T | null) => void,
+  onUpdate: (data: T | null, fromCache: boolean) => void,
   onError: (error: Error) => void
 ) {
   let isFirstSnapshot = true;
@@ -25,9 +25,9 @@ export function subscribeToCloudDoc<T>(
       isFirstSnapshot = false;
 
       if (snapshot.exists()) {
-        onUpdate(snapshot.data() as T);
+        onUpdate(snapshot.data() as T, snapshot.metadata.fromCache);
       } else {
-        onUpdate(null);
+        onUpdate(null, snapshot.metadata.fromCache);
       }
     },
     (err) => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChecklistRecord, ScaleVolume } from './types/bioreactor';
-import { SEED_CHECKLISTS, INITIAL_OPERATORS } from './data/seedData';
+import { INITIAL_OPERATORS, isFictionalSeedRecord } from './data/seedData';
 import { REACTORS, SCALE_SPECS, getScaleByReactorId, validateChecklistValues } from './constants/reactorConfig';
 import { TopNav } from './components/TopNav';
 import { ParameterAveragesPanel } from './components/ParameterAveragesPanel';
@@ -21,7 +21,6 @@ import {
   FileDown,
   FileSpreadsheet,
   Plus,
-  RefreshCw,
   Info,
 } from 'lucide-react';
 
@@ -44,8 +43,13 @@ function formatLocalHHMM(d: Date): string {
 }
 
 function revalidateRecordList(list: ChecklistRecord[]): ChecklistRecord[] {
+  // Remove permanentemente qualquer registro fictício de demonstração antiga
+  const realRecords = (Array.isArray(list) ? list : []).filter(
+    (rec) => !isFictionalSeedRecord(rec)
+  );
+
   // Passo 1: Normaliza timestamp e calcula processHours caso inoculationDate/Time existam
-  const normalized = list.map((rec) => {
+  const normalized = realRecords.map((rec) => {
     const parsedTs =
       rec.date && rec.time ? new Date(`${rec.date}T${rec.time}:00`).getTime() : rec.timestamp;
     const timestamp = !isNaN(parsedTs) ? parsedTs : rec.timestamp || Date.now();
@@ -173,23 +177,28 @@ function loadFromLocalStorage(): {
   data: ChecklistRecord[];
   operators: string[];
   lastUpdatedISO: string | null;
+  hasLocalCache: boolean;
 } {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
+        const cleaned = revalidateRecordList(parsed);
         return {
-          data: revalidateRecordList(parsed),
+          data: cleaned,
           operators: [...INITIAL_OPERATORS],
           lastUpdatedISO: null,
+          hasLocalCache: cleaned.length > 0,
         };
       }
       if (parsed && Array.isArray(parsed.data)) {
+        const cleaned = revalidateRecordList(parsed.data);
         return {
-          data: revalidateRecordList(parsed.data),
+          data: cleaned,
           operators: mergeOperatorsList(parsed.operators),
           lastUpdatedISO: typeof parsed.lastUpdatedISO === 'string' ? parsed.lastUpdatedISO : null,
+          hasLocalCache: true,
         };
       }
     }
@@ -197,9 +206,10 @@ function loadFromLocalStorage(): {
     console.error('Failed to load records from localStorage', e);
   }
   return {
-    data: revalidateRecordList(SEED_CHECKLISTS),
+    data: [],
     operators: [...INITIAL_OPERATORS],
     lastUpdatedISO: null,
+    hasLocalCache: false,
   };
 }
 
@@ -228,8 +238,16 @@ export default function App() {
   const [operators, setOperators] = useState<string[]>(initialLocal.operators);
   const [, setSyncStatus] = useState<'loading' | 'saving' | 'synced' | 'offline'>('loading');
 
-  const isRemoteSyncRef = useRef<boolean>(false);
-  const isInitialLoadDoneRef = useRef<boolean>(false);
+  const recordsRef = useRef<ChecklistRecord[]>(initialLocal.data);
+  const operatorsRef = useRef<string[]>(initialLocal.operators);
+
+  useEffect(() => {
+    recordsRef.current = records;
+  }, [records]);
+
+  useEffect(() => {
+    operatorsRef.current = operators;
+  }, [operators]);
 
   // Inicia filtrado em TODAS as escalas e TODOS os biorreatores ('all')
   const [selectedScale, setSelectedScale] = useState<ScaleVolume | 'all'>('all');
@@ -244,105 +262,87 @@ export default function App() {
   const [isPDFModalOpen, setIsPDFModalOpen] = useState<boolean>(false);
   const [isDORefModalOpen, setIsDORefModalOpen] = useState<boolean>(false);
 
-  // EFEITO 1: Carregar e escutar o documento no Firestore em tempo real (sem login)
+  // Salva explicitamente no localStorage e no Firestore apenas quando o usuário realiza uma ação
+  const persistStateToCloudAndLocal = (
+    nextRecords: ChecklistRecord[],
+    nextOperators: string[]
+  ) => {
+    const cleanRecords = revalidateRecordList(nextRecords);
+    const mergedOps = mergeOperatorsList(nextOperators);
+    const nowIso = new Date().toISOString();
+
+    saveToLocalStorage(cleanRecords, mergedOps, nowIso);
+    setSyncStatus('saving');
+
+    saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
+      data: cleanRecords,
+      operators: mergedOps,
+      lastUpdatedISO: nowIso,
+    })
+      .then(() => {
+        setSyncStatus('synced');
+      })
+      .catch((error) => {
+        console.warn('Falha ao salvar no Firestore:', error);
+        setSyncStatus('offline');
+      });
+  };
+
+  // Escuta o documento no Firestore em tempo real (sem risco de sobrescrever a nuvem com dados fictícios)
   useEffect(() => {
-    isInitialLoadDoneRef.current = false;
     setSyncStatus('loading');
 
-    // 1. Carrega instantaneamente do cache local (localStorage)
     const cached = loadFromLocalStorage();
-    isRemoteSyncRef.current = true;
     setRecords(cached.data);
     setOperators(cached.operators);
 
-    let isFirstCloudSnapshot = true;
-
-    // 2. Abre conexão em tempo real com o Firestore
     const unsubscribe = subscribeToCloudDoc<CloudChecklistDocument>(
       CLOUD_COLLECTION,
       CLOUD_DOC_ID,
-      (cloudData) => {
-        const localTime = cached.lastUpdatedISO ? Date.parse(cached.lastUpdatedISO) : 0;
-        const cloudTime = cloudData?.lastUpdatedISO ? Date.parse(cloudData.lastUpdatedISO) : 0;
-
-        // Verifica se o cache local tem edições mais novas que a nuvem no 1º carregamento
-        const isLocalNewerOnFirstLoad =
-          isFirstCloudSnapshot && localTime > 0 && localTime > cloudTime;
-        isFirstCloudSnapshot = false;
-
-        if (cloudData && Array.isArray(cloudData.data) && !isLocalNewerOnFirstLoad) {
-          // A nuvem tem dados mais recentes -> atualiza a tela e o localStorage
+      (cloudData, fromCache) => {
+        if (cloudData && Array.isArray(cloudData.data)) {
+          const hadFictionalInCloud = cloudData.data.some((rec) => isFictionalSeedRecord(rec));
           const mergedOps = mergeOperatorsList(cloudData.operators);
           const revalidatedCloud = revalidateRecordList(cloudData.data);
-          isRemoteSyncRef.current = true;
+
           setRecords(revalidatedCloud);
           setOperators(mergedOps);
-          saveToLocalStorage(revalidatedCloud, mergedOps, cloudData.lastUpdatedISO);
-
+          saveToLocalStorage(
+            revalidatedCloud,
+            mergedOps,
+            cloudData.lastUpdatedISO || new Date().toISOString()
+          );
           setSyncStatus('synced');
-          isInitialLoadDoneRef.current = true;
-          setTimeout(() => {
-            isRemoteSyncRef.current = false;
-          }, 150);
-        } else {
-          // O documento ainda não existe na nuvem OU o cache local é mais novo -> envia para a nuvem
+
+          // Se o documento na nuvem ainda continha registros fictícios antigos, limpa-os definitivamente na nuvem
+          if (hadFictionalInCloud && !fromCache) {
+            saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
+              data: revalidatedCloud,
+              operators: mergedOps,
+              lastUpdatedISO: new Date().toISOString(),
+            }).catch(() => {});
+          }
+        } else if (!fromCache && cached.hasLocalCache && cached.data.length > 0) {
+          // Apenas se o documento realmente não existir no servidor e este navegador tiver registros reais salvos
           const nowIso = cached.lastUpdatedISO || new Date().toISOString();
-          isRemoteSyncRef.current = false;
           saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
             data: cached.data,
             operators: cached.operators,
             lastUpdatedISO: nowIso,
           })
-            .then(() => {
-              setSyncStatus('synced');
-              isInitialLoadDoneRef.current = true;
-            })
-            .catch(() => {
-              setSyncStatus('offline');
-              isInitialLoadDoneRef.current = true;
-            });
+            .then(() => setSyncStatus('synced'))
+            .catch(() => setSyncStatus('offline'));
+        } else {
+          setSyncStatus('synced');
         }
       },
       () => {
-        // Se estiver sem internet ou sem permissão, opera em modo local sem travar
-        isRemoteSyncRef.current = false;
         setSyncStatus('offline');
-        isInitialLoadDoneRef.current = true;
       }
     );
 
     return () => unsubscribe();
   }, []);
-
-  // EFEITO 2: Salvar automaticamente (Debounce de 500ms) quando o usuário edita algo
-  useEffect(() => {
-    // Não salva de volta na nuvem se a mudança veio da própria nuvem ou antes de terminar o load inicial
-    if (isRemoteSyncRef.current || !isInitialLoadDoneRef.current) {
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-
-    // Salva imediatamente no localStorage com o novo timestamp
-    saveToLocalStorage(records, operators, nowIso);
-
-    setSyncStatus('saving');
-    const timer = setTimeout(async () => {
-      try {
-        await saveToCloudDoc(CLOUD_COLLECTION, CLOUD_DOC_ID, {
-          data: records,
-          operators,
-          lastUpdatedISO: nowIso,
-        });
-        setSyncStatus('synced');
-      } catch (error) {
-        console.warn('Falha ao salvar no Firestore:', error);
-        setSyncStatus('offline');
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [records, operators]);
 
   // Incrementar novo operador na lista suspensa
   const handleAddOperator = (newOp: string) => {
@@ -352,7 +352,9 @@ export default function App() {
       if (prev.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
         return prev;
       }
-      return [...prev, trimmed];
+      const nextOps = [...prev, trimmed];
+      persistStateToCloudAndLocal(recordsRef.current, nextOps);
+      return nextOps;
     });
   };
 
@@ -360,10 +362,11 @@ export default function App() {
   const handleSaveRecord = (savedRec: ChecklistRecord) => {
     setRecords((prev) => {
       const exists = prev.some((r) => r.id === savedRec.id);
-      if (exists) {
-        return prev.map((r) => (r.id === savedRec.id ? savedRec : r));
-      }
-      return [savedRec, ...prev];
+      const nextRecords = exists
+        ? prev.map((r) => (r.id === savedRec.id ? savedRec : r))
+        : [savedRec, ...prev];
+      persistStateToCloudAndLocal(nextRecords, operatorsRef.current);
+      return nextRecords;
     });
     setEditingRecord(null);
     setSelectedReactorId(savedRec.reactorId);
@@ -378,26 +381,25 @@ export default function App() {
 
   // Handle deleting record
   const handleDeleteRecord = (id: string) => {
-    setRecords((prev) => prev.filter((r) => r.id !== id));
+    setRecords((prev) => {
+      const nextRecords = prev.filter((r) => r.id !== id);
+      persistStateToCloudAndLocal(nextRecords, operatorsRef.current);
+      return nextRecords;
+    });
   };
 
   // Handle archiving / unarchiving a batch
   const handleToggleArchiveBatch = (batchId: string, reactorId: number, archive: boolean) => {
-    setRecords((prev) =>
-      prev.map((r) => {
+    setRecords((prev) => {
+      const nextRecords = prev.map((r) => {
         if (r.reactorId === reactorId && (r.batchId || 'Lote Padrão') === batchId) {
           return { ...r, archived: archive };
         }
         return r;
-      })
-    );
-  };
-
-  const handleResetData = () => {
-    setRecords(SEED_CHECKLISTS);
-    setOperators([...INITIAL_OPERATORS]);
-    setSelectedScale('all');
-    setSelectedReactorId('all');
+      });
+      persistStateToCloudAndLocal(nextRecords, operatorsRef.current);
+      return nextRecords;
+    });
   };
 
   const handleSelectScale = (newScale: ScaleVolume | 'all') => {
@@ -825,16 +827,6 @@ export default function App() {
             <span>Checklist Parâmetros de Processo · Monitoramento e Rastreabilidade de Biorreatores</span>
             <span>·</span>
             <span>GMP / BPF Compliant</span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleResetData}
-              className="text-slate-400 hover:text-cyan-400 transition-colors flex items-center gap-1"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Restaurar Dados Padrão
-            </button>
           </div>
         </footer>
       </main>
