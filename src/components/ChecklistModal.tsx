@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChecklistRecord, SemaphoreLevel } from '../types/bioreactor';
 import {
   REACTORS,
@@ -17,6 +17,9 @@ import {
   AlertCircle,
   UserPlus,
   Clock,
+  Mic,
+  MicOff,
+  Sparkles,
 } from 'lucide-react';
 
 interface ChecklistModalProps {
@@ -66,6 +69,149 @@ function parseNumericInput(raw: string, fallback = 0): number {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function stripAccents(str: string): string {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Normaliza números falados por extenso em português para dígitos antes da extração por Regex
+function normalizePortugueseSpokenNumbers(rawText: string): string {
+  let text = rawText.toLowerCase();
+
+  // Compostos comuns de centenas/dezenas
+  const hundredsMap: Record<string, number> = {
+    cento: 100,
+    duzentos: 200,
+    trezentos: 300,
+    quatrocentos: 400,
+    quinhentos: 500,
+    seiscentos: 600,
+    setecentos: 700,
+    oitocentos: 800,
+    novecentos: 900,
+  };
+  const tensMap: Record<string, number> = {
+    vinte: 20,
+    trinta: 30,
+    quarenta: 40,
+    cinquenta: 50,
+    sessenta: 60,
+    setenta: 70,
+    oitenta: 80,
+    noventa: 90,
+  };
+  const unitsMap: Record<string, number> = {
+    zero: 0,
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    três: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    meia: 6,
+    sete: 7,
+    oito: 8,
+    nove: 9,
+  };
+  const teensMap: Record<string, number> = {
+    dez: 10,
+    onze: 11,
+    doze: 12,
+    treze: 13,
+    quatorze: 14,
+    catorze: 14,
+    quinze: 15,
+    dezesseis: 16,
+    dezessete: 17,
+    dezoito: 18,
+    dezenove: 19,
+  };
+
+  // Centena + dezena + unidade (ex: "cento e cinquenta e cinco")
+  text = text.replace(
+    /\b(cento|duzentos|trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos)\s+e\s+(vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa)\s+e\s+(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove)\b/gi,
+    (_, h, t, u) =>
+      String(
+        (hundredsMap[h.toLowerCase()] || 0) +
+          (tensMap[t.toLowerCase()] || 0) +
+          (unitsMap[u.toLowerCase()] || 0)
+      )
+  );
+
+  // Centena + dezena/teen/unidade (ex: "cento e cinquenta", "cento e dezessete")
+  text = text.replace(
+    /\b(cento|duzentos|trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos)\s+e\s+(vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove)\b/gi,
+    (_, h, rest) => {
+      const rKey = rest.toLowerCase();
+      const val = tensMap[rKey] ?? teensMap[rKey] ?? unitsMap[rKey] ?? 0;
+      return String((hundredsMap[h.toLowerCase()] || 0) + val);
+    }
+  );
+
+  // Dezena + unidade (ex: "trinta e dois", "vinte e um")
+  text = text.replace(
+    /\b(vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa)\s+e\s+(um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove)\b/gi,
+    (_, t, u) => String((tensMap[t.toLowerCase()] || 0) + (unitsMap[u.toLowerCase()] || 0))
+  );
+
+  // Palavras isoladas de centenas, dezenas, teens e unidades
+  const singleWords: Record<string, string> = {
+    cem: '100',
+    duzentos: '200',
+    trezentos: '300',
+    quatrocentos: '400',
+    quinhentos: '500',
+    seiscentos: '600',
+    setecentos: '700',
+    oitocentos: '800',
+    novecentos: '900',
+    vinte: '20',
+    trinta: '30',
+    quarenta: '40',
+    cinquenta: '50',
+    sessenta: '60',
+    setenta: '70',
+    oitenta: '80',
+    noventa: '90',
+    dez: '10',
+    onze: '11',
+    doze: '12',
+    treze: '13',
+    quatorze: '14',
+    catorze: '14',
+    quinze: '15',
+    dezesseis: '16',
+    dezessete: '17',
+    dezoito: '18',
+    dezenove: '19',
+    zero: '0',
+    um: '1',
+    uma: '1',
+    dois: '2',
+    duas: '2',
+    tres: '3',
+    três: '3',
+    quatro: '4',
+    cinco: '5',
+    seis: '6',
+    sete: '7',
+    oito: '8',
+    nove: '9',
+  };
+
+  text = text.replace(
+    /\b(cem|duzentos|trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos|vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa|dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|zero|um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove)\b/gi,
+    (match) => singleWords[match.toLowerCase()] ?? match
+  );
+
+  // Converte "30 vírgula 5" ou "0 ponto 25" em "30.5" / "0.25"
+  text = text.replace(/(\d+)\s*(?:v[ií]rgula|ponto|,)\s*(\d+)/gi, '$1.$2');
+
+  return text;
+}
+
 export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   isOpen,
   onClose,
@@ -100,6 +246,16 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   const [airInput, setAirInput] = useState<string>('85');
   const [notes, setNotes] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
+
+  // Estados do Comando de Voz Nativo (Sem IA)
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [voiceTranscript, setVoiceTranscript] = useState<string>('');
+  const [voiceFilledFields, setVoiceFilledFields] = useState<string[]>([]);
+  const [voiceStatusMsg, setVoiceStatusMsg] = useState<string>('');
+  const recognitionRef = useRef<any>(null);
+  const isListeningIntendedRef = useRef<boolean>(false);
+  const accumulatedFinalTranscriptRef = useRef<string>('');
+  const voiceSpokenFieldsSetRef = useRef<Set<string>>(new Set());
 
   const temperature = parseNumericInput(tempInput, 0);
   const dissolvedOxygen = parseNumericInput(doInput, 0);
@@ -142,9 +298,348 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
     };
   };
 
+  // Encerra o microfone ao fechar o modal ou desmontar
+  const stopVoiceRecognition = () => {
+    isListeningIntendedRef.current = false;
+    setIsListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch {
+        // Ignora erro se já estiver parado
+      }
+      recognitionRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopVoiceRecognition();
+    }
+    return () => {
+      stopVoiceRecognition();
+    };
+  }, [isOpen]);
+
+  // Interpretador local de voz (100% determinístico via Regex, sem uso de API de IA)
+  const applyVoiceCommandsFromText = (rawFullTranscript: string) => {
+    const normalized = normalizePortugueseSpokenNumbers(rawFullTranscript);
+    const cleanAscii = stripAccents(normalized);
+    const detected = new Set<string>(voiceSpokenFieldsSetRef.current);
+
+    // 1. Biorreator / Tanque (1 a 16)
+    const reactorMatches = [
+      ...cleanAscii.matchAll(/(?:biorreator|reator|tanque|br)\s*(?:numero\s*)?0*(\d{1,2})\b/gi),
+    ];
+    if (reactorMatches.length > 0) {
+      const lastMatch = reactorMatches[reactorMatches.length - 1];
+      const parsedId = parseInt(lastMatch[1], 10);
+      if (parsedId >= 1 && parsedId <= 16) {
+        setReactorId((prevId) => {
+          if (prevId !== parsedId) {
+            const sc = getScaleByReactorId(parsedId);
+            const sp = SCALE_SPECS[sc];
+            // Atualiza os alvos padrão da escala apenas se ainda não foram ditados por voz
+            if (!detected.has('Agitação')) setAgitInput(String(sp.agitation.target));
+            if (!detected.has('Pressão')) setPresInput(String(sp.pressure.target));
+            if (!detected.has('Vazão')) setAirInput(String(sp.airflow.target));
+            const resolved = resolveInoculationForReactor(parsedId, new Date());
+            if (!detected.has('Inoculação')) {
+              setInoculationDate(resolved.inocDate);
+              setInoculationTime(resolved.inocTime);
+            }
+          }
+          return parsedId;
+        });
+        detected.add('Tanque');
+      }
+    }
+
+    // 2. Número da OP / Ordem de Produção / Lote
+    const opMatches = [
+      ...cleanAscii.matchAll(
+        /\b(?:numero\s+da\s+op|ordem\s+de\s+producao|op|lote)\s*[:\-]?\s*([a-z0-9][a-z0-9\s\-]{0,18})/gi
+      ),
+    ];
+    if (opMatches.length > 0) {
+      const lastOpRaw = opMatches[opMatches.length - 1][1];
+      // Corta caso o usuário já tenha emendado a próxima palavra-chave
+      const stopWordsRegex =
+        /\b(operador|nome|responsavel|temperatura|oxigenio|sem\s+sonda|agitacao|pressao|vazao|observac|justificativa|acao|inoculacao|horario|hora|tanque|biorreator|reator)\b/i;
+      const cutOp = lastOpRaw.split(stopWordsRegex)[0].trim();
+      // Remove espaços entre números falados separadamente (ex: "10 70 387" -> "1070387")
+      const compactOp = cutOp.replace(/\s+/g, '').toUpperCase();
+      if (compactOp) {
+        setBatchId(compactOp);
+        detected.add('Nº da OP');
+      }
+    }
+
+    // 3. Operador / Nome
+    const opNameMatches = [
+      ...normalized.matchAll(
+        /\b(?:operador|operadora|respons[aá]vel|nome)\s+([a-záàâãéèêíïóôõöúçñ]+(?:\s+[a-záàâãéèêíïóôõöúçñ]+)?)/gi
+      ),
+    ];
+    if (opNameMatches.length > 0) {
+      const rawSpokenName = opNameMatches[opNameMatches.length - 1][1];
+      const stopWords =
+        /\b(temperatura|oxig[eê]nio|sem|agita[cç][aã]o|press[aã]o|vaz[aã]o|op|ordem|lote|tanque|biorreator|reator|observa[cç][aã]o|hor[aá]rio|data|inocula[cç][aã]o)\b/i;
+      const cleanedName = rawSpokenName.split(stopWords)[0].trim();
+
+      if (cleanedName.length >= 2) {
+        const spokenAscii = stripAccents(cleanedName.toLowerCase());
+        const matchedExisting = operators.find((op) => {
+          const opAscii = stripAccents(op.toLowerCase());
+          return (
+            opAscii === spokenAscii ||
+            opAscii.startsWith(spokenAscii) ||
+            opAscii.includes(spokenAscii)
+          );
+        });
+
+        if (matchedExisting) {
+          setIsCustomOperatorMode(false);
+          setOperatorName(matchedExisting);
+        } else {
+          // Capitaliza cada palavra e coloca no modo de novo operador
+          const formattedNew = cleanedName
+            .split(/\s+/)
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+          setIsCustomOperatorMode(true);
+          setCustomOperatorInput(formattedNew);
+        }
+        detected.add('Operador');
+      }
+    }
+
+    // 4. Horário de Inoculação / Horário do Check (opcional)
+    const inocTimeMatches = [
+      ...cleanAscii.matchAll(
+        /\binoculacao\s+(?:as\s+)?(\d{1,2})(?:\s*(?:horas?\s*(?:e\s*)?|:)\s*(\d{1,2}))?/gi
+      ),
+    ];
+    if (inocTimeMatches.length > 0) {
+      const m = inocTimeMatches[inocTimeMatches.length - 1];
+      const hh = Math.min(23, Math.max(0, parseInt(m[1], 10)));
+      const mm = m[2] ? Math.min(59, Math.max(0, parseInt(m[2], 10))) : 0;
+      setInoculationTime(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+      detected.add('Inoculação');
+    }
+
+    const checkTimeMatches = [
+      ...cleanAscii.matchAll(
+        /\b(?:horario\s+do\s+check|hora\s+do\s+check)\s+(?:as\s+)?(\d{1,2})(?:\s*(?:horas?\s*(?:e\s*)?|:)\s*(\d{1,2}))?/gi
+      ),
+    ];
+    if (checkTimeMatches.length > 0) {
+      const m = checkTimeMatches[checkTimeMatches.length - 1];
+      const hh = Math.min(23, Math.max(0, parseInt(m[1], 10)));
+      const mm = m[2] ? Math.min(59, Math.max(0, parseInt(m[2], 10))) : 0;
+      setTime(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+      detected.add('Horário');
+    }
+
+    // 5. Temperatura
+    const tempMatches = [
+      ...cleanAscii.matchAll(/\b(?:temperatura|temp)\s*(?:de\s*|em\s*)?(-?\d+(?:\.\d+)?)/gi),
+    ];
+    if (tempMatches.length > 0) {
+      const val = tempMatches[tempMatches.length - 1][1];
+      setTempInput(val);
+      detected.add('Temperatura');
+    }
+
+    // 6. Oxigênio Dissolvido ou "Sem Sonda"
+    if (/\bsem\s+sonda\b/i.test(cleanAscii)) {
+      setNoDOProbe(true);
+      detected.add('O2 (Sem Sonda)');
+    } else if (/\bcom\s+sonda\b/i.test(cleanAscii)) {
+      setNoDOProbe(false);
+    }
+
+    const doMatches = [
+      ...cleanAscii.matchAll(
+        /\b(?:oxigenio(?:\s+dissolvido)?|o2|od)\s*(?:de\s*|em\s*)?(\d+(?:\.\d+)?)/gi
+      ),
+    ];
+    if (doMatches.length > 0 && !/\boxigenio\s+sem\s+sonda\b/i.test(cleanAscii)) {
+      const val = doMatches[doMatches.length - 1][1];
+      setNoDOProbe(false);
+      setDoInput(val);
+      detected.add('Oxigênio');
+    }
+
+    // 7. Agitação (RPM)
+    const agitMatches = [
+      ...cleanAscii.matchAll(/\b(?:agitacao|rpm)\s*(?:de\s*|em\s*)?(\d+(?:\.\d+)?)/gi),
+    ];
+    if (agitMatches.length > 0) {
+      const val = agitMatches[agitMatches.length - 1][1];
+      setAgitInput(val);
+      detected.add('Agitação');
+    }
+
+    // 8. Pressão (bar)
+    const presMatches = [
+      ...cleanAscii.matchAll(/\b(?:pressao)\s*(?:de\s*|em\s*)?(\d+(?:\.\d+)?)/gi),
+    ];
+    if (presMatches.length > 0) {
+      const val = presMatches[presMatches.length - 1][1];
+      setPresInput(val);
+      detected.add('Pressão');
+    }
+
+    // 9. Vazão de Ar (L/min)
+    const airMatches = [
+      ...cleanAscii.matchAll(/\b(?:vazao(?:\s+de\s+ar)?)\s*(?:de\s*|em\s*)?(\d+(?:\.\d+)?)/gi),
+    ];
+    if (airMatches.length > 0) {
+      const val = airMatches[airMatches.length - 1][1];
+      setAirInput(val);
+      detected.add('Vazão');
+    }
+
+    // 10. Observações / Justificativa / Ação Corretiva
+    const notesMatches = [
+      ...rawFullTranscript.matchAll(
+        /\b(?:observa[cç][aã]o|observa[cç][oõ]es|justificativa|a[cç][aã]o\s+corretiva)\s*[:\-]?\s*(.+)$/gi
+      ),
+    ];
+    if (notesMatches.length > 0) {
+      const noteText = notesMatches[notesMatches.length - 1][1].trim();
+      if (noteText) {
+        setNotes(noteText.charAt(0).toUpperCase() + noteText.slice(1));
+        detected.add('Observações');
+      }
+    }
+
+    voiceSpokenFieldsSetRef.current = detected;
+    setVoiceFilledFields(Array.from(detected));
+    if (errorMsg) setErrorMsg('');
+  };
+
+  const handleToggleVoiceCommand = async () => {
+    if (isListening) {
+      stopVoiceRecognition();
+      setVoiceStatusMsg('Microfone pausado. Confira os valores preenchidos e clique em Salvar.');
+      return;
+    }
+
+    const SpeechRecognitionAPI =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      setVoiceStatusMsg(
+        'Seu navegador não suporta reconhecimento de voz nativo. Utilize o Google Chrome, Edge ou Safari.'
+      );
+      return;
+    }
+
+    // Solicita acesso ao microfone explicitamente no clique do usuário para evitar bloqueios silenciosos
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Libera o stream de teste imediatamente para o SpeechRecognition assumir o microfone
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (err: any) {
+        setVoiceStatusMsg(
+          'Permissão do microfone bloqueada. Clique no ícone de cadeado/permissões na barra de endereço do navegador e permita o Microfone.'
+        );
+        return;
+      }
+    }
+
+    try {
+      const recognition = new SpeechRecognitionAPI();
+      recognition.lang = 'pt-BR';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceStatusMsg('Ouvindo em português... Fale os parâmetros naturalmente.');
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        let newFinalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcriptChunk = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            newFinalChunk += ' ' + transcriptChunk;
+          } else {
+            interim += ' ' + transcriptChunk;
+          }
+        }
+
+        if (newFinalChunk) {
+          accumulatedFinalTranscriptRef.current = (
+            accumulatedFinalTranscriptRef.current +
+            ' ' +
+            newFinalChunk
+          ).trim();
+        }
+
+        const combinedTranscript = (
+          accumulatedFinalTranscriptRef.current +
+          ' ' +
+          interim
+        ).trim();
+
+        setVoiceTranscript(combinedTranscript);
+        applyVoiceCommandsFromText(combinedTranscript);
+      };
+
+      recognition.onerror = (event: any) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          isListeningIntendedRef.current = false;
+          setIsListening(false);
+          setVoiceStatusMsg(
+            'Acesso ao microfone negado pelo navegador. Permita o uso do microfone na barra de endereço.'
+          );
+        } else if (event.error === 'no-speech') {
+          // Mantém escutando silenciosamente caso haja pausa na fala
+        } else {
+          setVoiceStatusMsg(`Aviso de áudio (${event.error}). Continue falando ou clique novamente.`);
+        }
+      };
+
+      recognition.onend = () => {
+        // Se o usuário ainda não clicou para parar, reconecta automaticamente para suportar pausas longas
+        if (isListeningIntendedRef.current) {
+          try {
+            recognition.start();
+          } catch {
+            setIsListening(false);
+          }
+        } else {
+          setIsListening(false);
+        }
+      };
+
+      recognitionRef.current = recognition;
+      isListeningIntendedRef.current = true;
+      recognition.start();
+    } catch (e) {
+      setIsListening(false);
+      setVoiceStatusMsg('Não foi possível iniciar o microfone neste navegador.');
+    }
+  };
+
   // Sempre que o modal abrir, preenche os dados do registro em edição OU configura um novo registro com data/hora atual
   useEffect(() => {
     if (!isOpen) return;
+
+    accumulatedFinalTranscriptRef.current = '';
+    voiceSpokenFieldsSetRef.current = new Set();
+    setVoiceTranscript('');
+    setVoiceFilledFields([]);
+    setVoiceStatusMsg('');
 
     if (editingRecord) {
       setReactorId(editingRecord.reactorId);
@@ -337,6 +832,7 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    stopVoiceRecognition();
     const finalOperator =
       (isCustomOperatorMode ? customOperatorInput.trim() : operatorName.trim()) || 'Operador';
 
@@ -422,34 +918,155 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-[#0F1624] rounded-xl shadow-2xl border border-slate-700/80 w-full max-w-3xl overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-150">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-[#080C14] text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+      <div className="bg-[#0F1624] rounded-2xl shadow-2xl border border-slate-700/80 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Modal Header (Sempre visível no topo) */}
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-800 bg-[#080C14] text-slate-100">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-cyan-500/15 rounded-lg text-cyan-400 border border-cyan-500/30">
               <Activity className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold tracking-tight">
+              <h2 className="text-sm sm:text-base font-bold tracking-tight">
                 {editingRecord
                   ? `Editar Checklist · ${editingRecord.reactorTag} (${editingRecord.date.split('-').reverse().slice(0, 2).join('/')} ${editingRecord.time})`
                   : 'Novo Checklist de Parâmetros de Biorreator'}
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-[11px] text-slate-400 hidden sm:block">
                 Sinalização visual inteligente por cores (Verde: Nominal · Amarelo: Borda · Vermelho: Fora da Faixa)
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Botão Principal de Comando por Voz no Topo do Modal */}
+            <button
+              type="button"
+              onClick={handleToggleVoiceCommand}
+              title={
+                isListening
+                  ? 'Clique para pausar o preenchimento por voz'
+                  : 'Clique para falar todos os parâmetros pelo microfone'
+              }
+              className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                isListening
+                  ? 'bg-rose-600 text-white shadow-[0_0_24px_rgba(225,29,72,0.75)] ring-2 ring-rose-400 animate-pulse'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_20px_rgba(37,99,235,0.55)] border border-blue-400/40'
+              }`}
+            >
+              {isListening ? (
+                <>
+                  <MicOff className="w-4 h-4" />
+                  <span>Ouvindo... (Clique p/ Parar)</span>
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  <span>Ativar Comando de Voz</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} noValidate className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+          {/* Painel de Comando de Voz em Destaque no Topo do Formulário */}
+          <div
+            className={`rounded-xl p-4 border transition-all ${
+              isListening
+                ? 'bg-blue-950/40 border-blue-500/70 ring-2 ring-blue-500/30'
+                : 'bg-[#080C14] border-blue-500/30'
+            }`}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceCommand}
+                  title={isListening ? 'Pausar microfone' : 'Clique no microfone para falar'}
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                    isListening
+                      ? 'bg-rose-600 text-white shadow-[0_0_20px_rgba(225,29,72,0.7)] animate-pulse'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_16px_rgba(37,99,235,0.5)]'
+                  }`}
+                >
+                  {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      Preenchimento Automático por Voz (Clique no Microfone ao lado)
+                    </span>
+                    {isListening && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded-full">
+                        Microfone Ativo
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {voiceStatusMsg ||
+                      'Clique no ícone do microfone e fale todos os campos em sequência. O sistema preenche sozinho.'}
+                  </p>
+                </div>
+              </div>
+
+              {voiceTranscript && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    accumulatedFinalTranscriptRef.current = '';
+                    voiceSpokenFieldsSetRef.current = new Set();
+                    setVoiceTranscript('');
+                    setVoiceFilledFields([]);
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 underline self-end sm:self-center shrink-0"
+                >
+                  Limpar transcrição
+                </button>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-2.5 pt-2 border-t border-slate-800/80 font-mono leading-relaxed">
+              <strong className="text-blue-400 font-sans">Como falar:</strong>{' '}
+              "Tanque 5, OP 1070387, operador Vinicius, temperatura 30,5, oxigênio 21,8{' '}
+              <span className="text-slate-500">(ou oxigênio sem sonda)</span>, agitação 150, pressão
+              0,30, vazão 100"
+            </p>
+
+            {voiceTranscript && (
+              <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 space-y-2">
+                <div className="text-xs font-mono text-cyan-200 bg-[#050811]/90 border border-slate-800 rounded-lg px-3 py-2">
+                  <span className="text-slate-500 select-none">Fala reconhecida: </span>"
+                  {voiceTranscript}"
+                </div>
+
+                {voiceFilledFields.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400">Campos preenchidos por voz:</span>
+                    {voiceFilledFields.map((field) => (
+                      <span
+                        key={field}
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-full"
+                      >
+                        ✓ {field}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Section 1: Identification & Metadata */}
           <div>
             <h3 className="text-xs font-bold text-slate-400 mb-3">
@@ -939,11 +1556,23 @@ export const ChecklistModal: React.FC<ChecklistModalProps> = ({
           </div>
 
           {/* Footer Controls */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800">
             <span className="text-xs text-slate-400 font-mono">
               Assinatura Eletrônica: OP-{effectiveOperatorName.split(' ')[0]?.toUpperCase() || 'OPERADOR'}
             </span>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleToggleVoiceCommand}
+                className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  isListening
+                    ? 'bg-rose-600 text-white animate-pulse'
+                    : 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40'
+                }`}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {isListening ? 'Parar Microfone' : 'Falar Parâmetros'}
+              </button>
               <button
                 type="button"
                 onClick={onClose}

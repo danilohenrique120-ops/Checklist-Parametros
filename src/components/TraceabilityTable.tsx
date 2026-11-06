@@ -364,11 +364,11 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
   );
 
   return (
-    <div className="bg-[#0F1624] border border-slate-800/90 rounded-xl p-5">
+    <div className="glass-panel rounded-3xl p-6">
       {/* Top Lifecycle Tabs & View Switcher */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4 mb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/[0.06] pb-4 mb-5">
         <div>
-          <h2 className="text-base font-semibold text-slate-100 tracking-tight">
+          <h2 className="text-base font-bold text-white tracking-tight">
             Gestão Inteligente de Histórico & Rastreabilidade GMP
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -377,20 +377,20 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
         </div>
 
         {/* Lifecycle Tabs: Active Batches vs Archived Batches */}
-        <div className="flex items-center gap-1.5 p-1 bg-[#080C14] border border-slate-800 rounded-lg">
+        <div className="flex items-center gap-1 p-1 bg-[#070B16]/90 border border-white/[0.08] rounded-full">
           <button
             onClick={() => {
               setLifecycleTab('active');
               setFlatPage(1);
             }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
               lifecycleTab === 'active'
-                ? 'bg-[#131C2E] text-cyan-300 border border-cyan-500/30'
+                ? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.45)]'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            Bateladas Ativas ({activeRecordsCount} leituras)
+            <span className={`w-2 h-2 rounded-full ${lifecycleTab === 'active' ? 'bg-emerald-300' : 'bg-emerald-400'}`} />
+            Bateladas Ativas ({activeRecordsCount})
           </button>
 
           <button
@@ -398,14 +398,14 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               setLifecycleTab('archived');
               setFlatPage(1);
             }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
               lifecycleTab === 'archived'
-                ? 'bg-[#131C2E] text-cyan-300 border border-cyan-500/30'
+                ? 'bg-blue-600 text-white shadow-[0_0_16px_rgba(37,99,235,0.45)]'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Archive className="w-3.5 h-3.5 text-slate-400" />
-            Lotes Encerrados / Arquivo ({archivedRecordsCount} leituras)
+            <Archive className="w-3.5 h-3.5" />
+            Lotes Encerrados ({archivedRecordsCount})
           </button>
         </div>
       </div>
@@ -413,27 +413,27 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
       {/* Filters & View Mode Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
         {/* View Mode Selector (Sanfona por Lote vs Lista Paginada) */}
-        <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg self-start">
+        <div className="flex items-center gap-1 p-1 bg-[#070B16]/90 border border-white/[0.08] rounded-full self-start">
           <button
             onClick={() => setViewMode('grouped')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            className={`px-3.5 py-1.5 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
               viewMode === 'grouped'
-                ? 'bg-[#131C2E] text-slate-100 border border-slate-700 font-semibold'
+                ? 'bg-blue-600 text-white font-semibold shadow-[0_0_14px_rgba(37,99,235,0.4)]'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Layers className="w-3.5 h-3.5 text-cyan-400" />
-            Agrupado por Lote / Batelada ({batchGroups.length})
+            <Layers className="w-3.5 h-3.5" />
+            Agrupado por Lote ({batchGroups.length})
           </button>
           <button
             onClick={() => setViewMode('flat')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            className={`px-3.5 py-1.5 text-xs font-medium rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap ${
               viewMode === 'flat'
-                ? 'bg-[#131C2E] text-slate-100 border border-slate-700 font-semibold'
+                ? 'bg-blue-600 text-white font-semibold shadow-[0_0_14px_rgba(37,99,235,0.4)]'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <List className="w-3.5 h-3.5 text-cyan-400" />
+            <List className="w-3.5 h-3.5" />
             Lista Paginada ({sortedRecords.length})
           </button>
         </div>
@@ -441,7 +441,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
         {/* Search & Quick Filters */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-500" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
             <input
               type="text"
               placeholder="Buscar lote, operador, reator..."
@@ -450,7 +450,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                 setSearch(e.target.value);
                 setFlatPage(1);
               }}
-              className="text-xs bg-[#080C14] border border-slate-700/80 text-slate-100 placeholder:text-slate-500 rounded-lg pl-8 pr-3 py-1.5 w-48 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+              className="text-xs bg-[#070B16]/90 border border-white/[0.08] text-slate-100 placeholder:text-slate-500 rounded-xl pl-8 pr-3 py-1.5 w-52 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             />
           </div>
 
@@ -460,7 +460,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               setScaleFilter(e.target.value as any);
               setFlatPage(1);
             }}
-            className="text-xs bg-[#080C14] border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+            className="text-xs bg-[#070B16]/90 border border-white/[0.08] rounded-xl px-3 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
           >
             <option value="all">Todas as Escalas</option>
             <option value="100L">100L</option>
@@ -475,10 +475,10 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               setOnlyDeviations(!onlyDeviations);
               setFlatPage(1);
             }}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+            className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap ${
               onlyDeviations
-                ? 'bg-rose-600 text-white border-rose-500'
-                : 'bg-[#131C2E] text-slate-200 border-slate-700/80 hover:bg-rose-950/60 hover:border-rose-700 hover:text-rose-300'
+                ? 'bg-rose-600 text-white border-rose-500 shadow-[0_0_16px_rgba(225,29,72,0.4)]'
+                : 'bg-[#070B16]/90 text-slate-200 border-white/[0.08] hover:bg-rose-950/60 hover:border-rose-700 hover:text-rose-300'
             }`}
           >
             <AlertTriangle className={`w-3.5 h-3.5 ${onlyDeviations ? 'text-white' : 'text-rose-400'}`} />
@@ -488,7 +488,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
       </div>
 
       {/* Color Legend Strip */}
-      <div className="mb-4 px-3.5 py-2.5 bg-[#080C14] border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+      <div className="mb-4 px-4 py-2.5 glass-subcard rounded-2xl flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
         <div className="flex flex-wrap items-center gap-4">
           <span className="font-semibold text-slate-300">Legenda Semáforo:</span>
           <span className="flex items-center gap-1.5">
@@ -513,7 +513,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
       {viewMode === 'grouped' ? (
         <div className="space-y-3">
           {batchGroups.length === 0 ? (
-            <div className="py-10 text-center text-xs text-slate-500 border border-slate-800 rounded-lg bg-[#080C14]/50">
+            <div className="py-10 text-center text-xs text-slate-500 glass-subcard rounded-2xl">
               Nenhuma batelada encontrada para os filtros selecionados nesta aba.
             </div>
           ) : (
@@ -531,30 +531,30 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               return (
                 <div
                   key={group.key}
-                  className={`border rounded-xl overflow-hidden transition-all ${
+                  className={`border rounded-2xl overflow-hidden transition-all ${
                     group.deviationsCount > 0
-                      ? 'border-rose-500/50 bg-rose-950/10'
+                      ? 'border-rose-500/40 bg-rose-950/10'
                       : group.warningsCount > 0
                       ? 'border-amber-500/40 bg-amber-950/10'
-                      : 'border-slate-800 bg-[#0B101B]'
+                      : 'border-white/[0.08] bg-[#070B16]/60'
                   }`}
                 >
                   {/* Accordion Header Row */}
                   <div
                     onClick={() => toggleExpandBatch(group.key, idx === 0)}
-                    className="cursor-pointer px-4 py-3.5 bg-[#131C2E]/90 hover:bg-[#172238] transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                    className="cursor-pointer px-4 py-3.5 bg-[#0C1324]/90 hover:bg-[#111B33] transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-3"
                   >
                     <div className="flex flex-wrap items-center gap-3">
                       <span className="text-slate-400">
                         {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       </span>
 
-                      <span className="font-mono text-sm font-bold text-slate-100">
+                      <span className="font-mono text-sm font-bold text-white">
                         {group.reactorTag}
                       </span>
                       <span className="text-xs font-mono text-slate-400">· {group.scale} ·</span>
-                      <span className="font-mono text-xs font-semibold text-cyan-400">
-                        Lote {group.batchId}
+                      <span className="font-mono text-xs font-semibold text-blue-400">
+                        OP {group.batchId}
                       </span>
                       <span className="text-xs text-slate-400">
                         · <strong className="text-slate-200">{group.records.length}</strong> checklists ({group.minHours}h a {group.maxHours}h)
@@ -596,9 +596,9 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                         <button
                           onClick={(e) => handleExportBatchPDF(group, e)}
                           title="Baixar Relatório PDF apenas deste Lote"
-                          className="px-2.5 py-1 text-xs font-semibold text-slate-200 bg-[#080C14] border border-slate-700 hover:border-cyan-500/50 hover:text-cyan-300 rounded-md flex items-center gap-1 whitespace-nowrap"
+                          className="px-2.5 py-1 text-xs font-semibold text-slate-200 bg-[#070B16] border border-white/[0.08] hover:border-blue-500/50 hover:text-blue-300 rounded-lg flex items-center gap-1 whitespace-nowrap"
                         >
-                          <FileDown className="w-3.5 h-3.5 text-cyan-400" />
+                          <FileDown className="w-3.5 h-3.5 text-blue-400" />
                           PDF do Lote
                         </button>
 
@@ -609,7 +609,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                               onToggleArchiveBatch(group.batchId, group.reactorId, true);
                             }}
                             title="Encerrar esta batelada e mover para o Arquivo Histórico"
-                            className="px-2.5 py-1 text-xs font-semibold text-slate-300 bg-[#080C14] border border-slate-700 hover:bg-amber-950/60 hover:text-amber-300 hover:border-amber-700 rounded-md flex items-center gap-1 whitespace-nowrap"
+                            className="px-2.5 py-1 text-xs font-semibold text-slate-300 bg-[#070B16] border border-white/[0.08] hover:bg-amber-950/60 hover:text-amber-300 hover:border-amber-700 rounded-lg flex items-center gap-1 whitespace-nowrap"
                           >
                             <Archive className="w-3.5 h-3.5" />
                             Encerrar Lote
@@ -621,7 +621,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                               onToggleArchiveBatch(group.batchId, group.reactorId, false);
                             }}
                             title="Reativar este lote para a aba de Bateladas Ativas"
-                            className="px-2.5 py-1 text-xs font-semibold text-cyan-300 bg-cyan-950/60 border border-cyan-700/60 hover:bg-cyan-900/70 rounded-md flex items-center gap-1 whitespace-nowrap"
+                            className="px-2.5 py-1 text-xs font-semibold text-blue-300 bg-blue-950/60 border border-blue-700/60 hover:bg-blue-900/70 rounded-lg flex items-center gap-1 whitespace-nowrap"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             Reativar Lote
@@ -633,27 +633,27 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
 
                   {/* Expanded Accordion Content with Internal Pagination */}
                   {isExpanded && (
-                    <div className="border-t border-slate-800 bg-[#080C14]">
+                    <div className="border-t border-white/[0.06] bg-[#070B16]/90">
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead>
-                            <tr className="bg-[#0F1624] text-slate-300 font-semibold border-b border-slate-800">
-                              <th className="py-2 px-3 whitespace-nowrap">Data / Horário</th>
-                              <th className="py-2 px-3 whitespace-nowrap">Biorreator</th>
-                              <th className="py-2 px-3 whitespace-nowrap">Escala</th>
-                              <th className="py-2 px-3 whitespace-nowrap">Lote</th>
-                              <th className="py-2 px-3 whitespace-nowrap">Operador</th>
-                              <th className="py-2 px-2 text-center whitespace-nowrap">Idade (h)</th>
-                              <th className="py-2 px-2.5 text-right whitespace-nowrap">Temp (°C)</th>
-                              <th className="py-2 px-2.5 text-right whitespace-nowrap">O2 (%)</th>
-                              <th className="py-2 px-2.5 text-right whitespace-nowrap">Agit (RPM)</th>
-                              <th className="py-2 px-2.5 text-right whitespace-nowrap">Pressão (bar)</th>
-                              <th className="py-2 px-2.5 text-right whitespace-nowrap">Vazão (L/min)</th>
-                              <th className="py-2 px-3 text-center whitespace-nowrap">Status Semáforo</th>
-                              <th className="py-2 px-2 text-center whitespace-nowrap">Ações</th>
+                            <tr className="bg-[#0B1222] text-slate-300 font-semibold border-b border-white/[0.06]">
+                              <th className="py-2.5 px-3 whitespace-nowrap">Data / Horário</th>
+                              <th className="py-2.5 px-3 whitespace-nowrap">Biorreator</th>
+                              <th className="py-2.5 px-3 whitespace-nowrap">Escala</th>
+                              <th className="py-2.5 px-3 whitespace-nowrap">Numero da OP</th>
+                              <th className="py-2.5 px-3 whitespace-nowrap">Operador</th>
+                              <th className="py-2.5 px-2 text-center whitespace-nowrap">Idade (h)</th>
+                              <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Temp (°C)</th>
+                              <th className="py-2.5 px-2.5 text-right whitespace-nowrap">O2 (%)</th>
+                              <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Agit (RPM)</th>
+                              <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Pressão (bar)</th>
+                              <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Vazão (L/min)</th>
+                              <th className="py-2.5 px-3 text-center whitespace-nowrap">Status Semáforo</th>
+                              <th className="py-2.5 px-2 text-center whitespace-nowrap">Ações</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-800/80 text-slate-300 font-mono">
+                          <tbody className="divide-y divide-white/[0.05] text-slate-300 font-mono">
                             {renderRecordRows(visibleRecords)}
                           </tbody>
                         </table>
@@ -661,7 +661,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
 
                       {/* Internal Pagination Footer for this Batch */}
                       {totalBatchPages > 1 && (
-                        <div className="px-4 py-2.5 bg-[#0F1624] border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                        <div className="px-4 py-2.5 bg-[#0B1222] border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
                           <span>
                             Exibindo {(safePage - 1) * ITEMS_PER_PAGE + 1} a{' '}
                             {Math.min(safePage * ITEMS_PER_PAGE, group.records.length)} de {group.records.length} leituras deste lote
@@ -672,7 +672,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                               onClick={() =>
                                 setBatchPageMap((prev) => ({ ...prev, [group.key]: safePage - 1 }))
                               }
-                              className="px-2.5 py-1 bg-[#131C2E] border border-slate-700 text-slate-200 rounded disabled:opacity-40 hover:bg-slate-800"
+                              className="px-2.5 py-1 bg-[#131C2E] border border-white/[0.08] text-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-800"
                             >
                               Anterior
                             </button>
@@ -684,7 +684,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                               onClick={() =>
                                 setBatchPageMap((prev) => ({ ...prev, [group.key]: safePage + 1 }))
                               }
-                              className="px-2.5 py-1 bg-[#131C2E] border border-slate-700 text-slate-200 rounded disabled:opacity-40 hover:bg-slate-800"
+                              className="px-2.5 py-1 bg-[#131C2E] border border-white/[0.08] text-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-800"
                             >
                               Próxima
                             </button>
@@ -701,14 +701,14 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
       ) : (
         /* MODE 2: FLAT PAGINATED TABLE */
         <div>
-          <div className="overflow-x-auto border border-slate-800 rounded-lg">
+          <div className="overflow-x-auto border border-white/[0.08] rounded-2xl">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="bg-[#131C2E] text-slate-300 font-semibold border-b border-slate-800">
+                <tr className="bg-[#0B1222] text-slate-300 font-semibold border-b border-white/[0.06]">
                   <th className="py-2.5 px-3 whitespace-nowrap">Data / Horário</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">Biorreator</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">Escala</th>
-                  <th className="py-2.5 px-3 whitespace-nowrap">Lote (Batch)</th>
+                  <th className="py-2.5 px-3 whitespace-nowrap">Numero da OP</th>
                   <th className="py-2.5 px-3 whitespace-nowrap">Operador</th>
                   <th className="py-2.5 px-2 text-center whitespace-nowrap">Idade (h)</th>
                   <th className="py-2.5 px-2.5 text-right whitespace-nowrap">Temp (°C)</th>
@@ -720,7 +720,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                   <th className="py-2.5 px-2 text-center whitespace-nowrap">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/80 text-slate-300 font-mono">
+              <tbody className="divide-y divide-white/[0.05] text-slate-300 font-mono">
                 {paginatedFlatRecords.length === 0 ? (
                   <tr>
                     <td colSpan={13} className="py-8 text-center text-slate-500 font-sans">
@@ -744,7 +744,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                 <button
                   disabled={currentFlatPage <= 1}
                   onClick={() => setFlatPage((p) => Math.max(1, p - 1))}
-                  className="px-3 py-1.5 bg-[#131C2E] border border-slate-700 text-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-800 flex items-center gap-1 font-medium"
+                  className="px-3 py-1.5 glass-subcard text-slate-200 rounded-xl disabled:opacity-40 hover:bg-slate-800 flex items-center gap-1 font-medium"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                   Anterior
@@ -752,7 +752,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                 <button
                   disabled={currentFlatPage >= totalFlatPages}
                   onClick={() => setFlatPage((p) => Math.min(totalFlatPages, p + 1))}
-                  className="px-3 py-1.5 bg-[#131C2E] border border-slate-700 text-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-800 flex items-center gap-1 font-medium"
+                  className="px-3 py-1.5 glass-subcard text-slate-200 rounded-xl disabled:opacity-40 hover:bg-slate-800 flex items-center gap-1 font-medium"
                 >
                   Próxima
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -765,11 +765,11 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
 
       {/* Record Detail Modal */}
       {selectedRecordForDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4">
-          <div className="bg-[#0F1624] rounded-xl shadow-2xl border border-slate-700/80 w-full max-w-lg p-6 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="glass-panel rounded-3xl shadow-2xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3 mb-4">
               <div>
-                <h3 className="text-base font-bold text-slate-100">
+                <h3 className="text-base font-bold text-white">
                   Checklist {selectedRecordForDetail.reactorTag} · {selectedRecordForDetail.scale}
                 </h3>
                 <p className="text-xs text-slate-400">
@@ -786,7 +786,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2.5 bg-[#080C14] p-3.5 rounded-lg border border-slate-800 font-mono">
+              <div className="grid grid-cols-2 gap-2.5 glass-subcard p-3.5 rounded-2xl font-mono">
                 <div>
                   <span className="text-slate-400 block text-[11px]">Temperatura:</span>
                   <span className="font-bold text-slate-100">{selectedRecordForDetail.temperature}°C</span>
@@ -813,10 +813,10 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[11px]">Tempo de Cultivo:</span>
-                  <span className="font-bold text-cyan-300">{selectedRecordForDetail.processHours}h</span>
+                  <span className="font-bold text-blue-400">{selectedRecordForDetail.processHours}h</span>
                 </div>
                 {selectedRecordForDetail.inoculationDate && selectedRecordForDetail.inoculationTime && (
-                  <div className="col-span-2 pt-1.5 border-t border-slate-800/80">
+                  <div className="col-span-2 pt-1.5 border-t border-white/[0.06]">
                     <span className="text-slate-400 block text-[11px]">Data / Horário de Inoculação:</span>
                     <span className="font-bold text-slate-200">
                       {selectedRecordForDetail.inoculationDate.split('-').reverse().join('/')} às{' '}
@@ -827,14 +827,14 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               </div>
 
               {selectedRecordForDetail.deviationNotes && (
-                <div className="p-3 bg-rose-950/60 border border-rose-700/70 rounded-lg text-rose-200">
+                <div className="p-3 bg-rose-950/60 border border-rose-700/70 rounded-2xl text-rose-200">
                   <span className="font-bold block mb-1 text-rose-300">Desvios registrados (Fora da Faixa):</span>
                   <p>{selectedRecordForDetail.deviationNotes}</p>
                 </div>
               )}
 
               {selectedRecordForDetail.notes && (
-                <div className="p-3 bg-[#131C2E] border border-slate-800 rounded-lg text-slate-200">
+                <div className="p-3 glass-subcard rounded-2xl text-slate-200">
                   <span className="font-bold block mb-1 text-slate-400">Observações / Ações Corretivas:</span>
                   <p className="italic">"{selectedRecordForDetail.notes}"</p>
                 </div>
@@ -842,7 +842,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
 
               <div className="pt-2 text-[11px] text-slate-500 font-mono flex justify-between">
                 <span>Rubrica: {selectedRecordForDetail.operatorSignature || 'OP-CONFIRMED'}</span>
-                <span>Lote: {selectedRecordForDetail.batchId}</span>
+                <span>OP: {selectedRecordForDetail.batchId}</span>
               </div>
             </div>
 
@@ -854,7 +854,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
                     setSelectedRecordForDetail(null);
                     onEditRecord(recToEdit);
                   }}
-                  className="px-4 py-1.5 text-xs font-semibold text-amber-300 bg-amber-950/50 border border-amber-700/60 hover:bg-amber-900/60 rounded-lg flex items-center gap-1.5"
+                  className="px-4 py-1.5 text-xs font-semibold text-amber-300 bg-amber-950/50 border border-amber-700/60 hover:bg-amber-900/60 rounded-xl flex items-center gap-1.5"
                 >
                   <Pencil className="w-3.5 h-3.5" />
                   Editar Checklist
@@ -862,7 +862,7 @@ export const TraceabilityTable: React.FC<TraceabilityTableProps> = ({
               )}
               <button
                 onClick={() => setSelectedRecordForDetail(null)}
-                className="px-4 py-1.5 text-xs font-semibold text-slate-200 bg-[#131C2E] border border-slate-700 hover:bg-slate-800 rounded-lg"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-200 glass-subcard hover:bg-slate-800 rounded-xl"
               >
                 Fechar
               </button>

@@ -271,6 +271,7 @@ export default function App() {
   const [selectedReactorId, setSelectedReactorId] = useState<number | 'all'>('all');
   const [activeSection, setActiveSection] = useState<'dashboard' | 'averages' | 'trends' | 'table'>('dashboard');
   const [complianceScope, setComplianceScope] = useState<'all' | 'selected'>('all');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
   // Modals
   const [isChecklistOpen, setIsChecklistOpen] = useState<boolean>(false);
@@ -581,41 +582,109 @@ export default function App() {
     calcParamCompliance('Vazão de Ar', Wind, (r) => r.isAirflowNominal),
   ];
 
+  const scaleCounts: Record<ScaleVolume | 'all', number> = {
+    all: activeRecords.length,
+    '100L': activeRecords.filter((r) => r.scale === '100L').length,
+    '500L': activeRecords.filter((r) => r.scale === '500L').length,
+    '3000L': activeRecords.filter((r) => r.scale === '3000L').length,
+    '5000L': activeRecords.filter((r) => r.scale === '5000L').length,
+  };
+
+  const complianceNum = Number(globalComplianceRate);
+  const arcRadius = 56;
+  const arcCircumference = Math.PI * arcRadius; // Semicircle arc length
+  const arcDashOffset =
+    arcCircumference - (Math.min(100, Math.max(0, complianceNum)) / 100) * arcCircumference;
+
+  const formattedToday = new Intl.DateTimeFormat('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  }).format(new Date());
+
   return (
-    <div className="min-h-screen bg-[#080C14] text-slate-100 pb-16">
-      {/* Top Nav */}
+    <div className="min-h-screen bg-[#050811] text-slate-100 pb-16 relative overflow-hidden">
+      {/* Ambient Radial Light Glows (Matching the Video's Warm Amber Top-Right & Cobalt Blue Left/Bottom Atmosphere) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      >
+        {/* Warm Amber / Gold Glow (Top Right behind Gauge Card) */}
+        <div
+          className="absolute -top-28 -right-20 w-[560px] h-[560px] rounded-full opacity-35 blur-[120px]"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(245, 158, 11, 0.55) 0%, rgba(217, 119, 6, 0.18) 50%, transparent 75%)',
+          }}
+        />
+        {/* Royal Cobalt Blue Glow (Top Left / Sidebar) */}
+        <div
+          className="absolute top-12 -left-28 w-[620px] h-[620px] rounded-full opacity-35 blur-[130px]"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(37, 99, 235, 0.55) 0%, rgba(29, 78, 216, 0.18) 55%, transparent 75%)',
+          }}
+        />
+        {/* Deep Blue / Cyan Glow (Center Bottom behind Chart) */}
+        <div
+          className="absolute bottom-0 left-1/3 w-[680px] h-[480px] rounded-full opacity-25 blur-[140px]"
+          style={{
+            background:
+              'radial-gradient(circle, rgba(59, 130, 246, 0.45) 0%, rgba(14, 165, 233, 0.12) 55%, transparent 75%)',
+          }}
+        />
+      </div>
+
+      {/* Sidebar & Responsive Navigation */}
       <TopNav
         onOpenDORefModal={() => setIsDORefModalOpen(true)}
         activeSection={activeSection}
         onNavigate={setActiveSection}
+        selectedScale={selectedScale}
+        onSelectScale={handleSelectScale}
+        scaleCounts={scaleCounts}
+        onOpenChecklist={() =>
+          handleOpenChecklistForReactor(
+            selectedReactorId !== 'all'
+              ? selectedReactorId
+              : selectedScale !== 'all'
+              ? REACTORS.find((r) => r.scale === selectedScale)?.id || 1
+              : 1
+          )
+        }
+        onOpenPDFModal={() => setIsPDFModalOpen(true)}
+        onExportExcel={() => exportStratifiedExcel({ records, selectedReactorId })}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
-        {/* Banner with Context & Quick Filter */}
-        <div className="bg-[#0F1624] border border-slate-800/90 rounded-xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Main Single-Page Viewport */}
+      <main
+        className={`relative z-10 max-w-[1600px] mx-auto px-4 sm:px-6 lg:pr-8 pt-6 space-y-6 transition-all duration-300 ${
+          isSidebarCollapsed ? 'lg:pl-24' : 'lg:pl-72'
+        }`}
+      >
+        {/* Top Header Bar (Video Style: Greeting/Title on Left + Filters & Blue "+ Lançar Checklist" CTA on Right) */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-1">
           <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="p-2 bg-cyan-500/10 text-cyan-400 rounded-lg border border-cyan-500/30">
-                <Activity className="w-4 h-4" />
-              </span>
-              <h1 className="text-xl font-bold tracking-tight text-slate-50">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
+              {activeReactor
+                ? `Checklist de Parâmetros · ${activeReactor.tag}`
+                : selectedScale !== 'all'
+                ? `Checklist de Parâmetros · Escala ${selectedScale}`
+                : 'Checklist de Parâmetros'}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1 capitalize">
+              <span>{formattedToday}</span>
+              <span aria-hidden="true">·</span>
+              <span className="normal-case text-blue-400 font-medium">
                 {activeReactor
-                  ? `${activeReactor.tag} · ${activeReactor.name}`
+                  ? `Escala ${activeScale} · Monitoramento Individual`
                   : selectedScale !== 'all'
-                  ? `Biorreatores · Escala ${selectedScale}`
+                  ? `Filtro por Escala (${selectedScale})`
                   : 'Todos os Biorreatores (1 ao 16)'}
-              </h1>
-              <span className="text-xs font-mono text-cyan-400 font-semibold">
-                {activeReactor
-                  ? `· Escala ${activeScale}`
-                  : selectedScale !== 'all'
-                  ? '· Filtro por Escala'
-                  : '· Visão Consolidada'}
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1.5">
-              Planta de bioprocesso: 16 reatores (1-5: 100L · 6-10: 500L · 11-14: 5000L · 15-16: 3000L). Controle por semáforo de cores, médias e histórico inteligente por lotes.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -623,65 +692,83 @@ export default function App() {
             <select
               value={selectedScale}
               onChange={(e) => handleSelectScale(e.target.value as ScaleVolume | 'all')}
-              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/60 font-semibold"
+              className="text-xs font-mono glass-subcard rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/60 font-semibold cursor-pointer"
               title="Filtrar por Escala"
             >
-              <option value="all">Todas as Escalas</option>
-              <option value="100L">Escala 100L (Tanques 1 ao 5)</option>
-              <option value="500L">Escala 500L (Tanques 6 ao 10)</option>
-              <option value="5000L">Escala 5000L (Tanques 11 ao 14)</option>
-              <option value="3000L">Escala 3000L (Tanques 15 e 16)</option>
+              <option value="all" className="bg-[#0B101E]">Todas as Escalas</option>
+              <option value="100L" className="bg-[#0B101E]">Escala 100L (Tanques 1 ao 5)</option>
+              <option value="500L" className="bg-[#0B101E]">Escala 500L (Tanques 6 ao 10)</option>
+              <option value="5000L" className="bg-[#0B101E]">Escala 5000L (Tanques 11 ao 14)</option>
+              <option value="3000L" className="bg-[#0B101E]">Escala 3000L (Tanques 15 e 16)</option>
             </select>
 
             {/* Filtro por Tanque no Topo */}
             <select
               value={selectedReactorId}
               onChange={(e) => handleSelectReactor(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/60 font-semibold"
+              className="text-xs font-mono glass-subcard rounded-xl px-3.5 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/60 font-semibold cursor-pointer"
               title="Filtrar por Tanque / Biorreator"
             >
-              <option value="all">
+              <option value="all" className="bg-[#0B101E]">
                 {selectedScale === 'all'
                   ? 'Todos os Biorreatores (1 ao 16)'
                   : `Todos os Tanques (${selectedScale})`}
               </option>
               {(selectedScale === 'all' || selectedScale === '100L') && (
-                <optgroup label="100L (Tanques 1 ao 5)">
+                <optgroup label="100L (Tanques 1 ao 5)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '100L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
               {(selectedScale === 'all' || selectedScale === '500L') && (
-                <optgroup label="500L (Tanques 6 ao 10)">
+                <optgroup label="500L (Tanques 6 ao 10)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '500L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
               {(selectedScale === 'all' || selectedScale === '5000L') && (
-                <optgroup label="5000L (Tanques 11 ao 14)">
+                <optgroup label="5000L (Tanques 11 ao 14)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '5000L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
               {(selectedScale === 'all' || selectedScale === '3000L') && (
-                <optgroup label="3000L (Tanques 15 e 16)">
+                <optgroup label="3000L (Tanques 15 e 16)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '3000L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
             </select>
+
+            <button
+              onClick={() => setIsPDFModalOpen(true)}
+              className="px-3.5 py-2.5 text-xs font-semibold text-slate-200 glass-subcard hover:bg-white/[0.08] rounded-full transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              title="Gerar Relatório em PDF"
+            >
+              <FileDown className="w-3.5 h-3.5 text-amber-400" />
+              PDF
+            </button>
+
+            <button
+              onClick={() => exportStratifiedExcel({ records, selectedReactorId })}
+              className="px-3.5 py-2.5 text-xs font-semibold text-emerald-200 glass-subcard hover:bg-emerald-500/15 rounded-full transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              title="Extrair planilha Excel estratificada por parâmetro, lote, escala e desvios"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              Excel
+            </button>
 
             <button
               onClick={() =>
@@ -693,79 +780,65 @@ export default function App() {
                     : 1
                 )
               }
-              className="px-3.5 py-2 text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              className="px-5 py-2.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-full transition-all flex items-center gap-1.5 whitespace-nowrap shadow-[0_0_26px_rgba(37,99,235,0.55)]"
             >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              <Plus className="w-4 h-4 stroke-[2.5]" />
               Lançar Checklist
-            </button>
-
-            <button
-              onClick={() => setIsPDFModalOpen(true)}
-              className="px-3.5 py-2 text-xs font-semibold text-slate-200 bg-[#131C2E] border border-slate-700/80 hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
-              title="Gerar Relatório em PDF"
-            >
-              <FileDown className="w-3.5 h-3.5 text-cyan-400" />
-              PDF
-            </button>
-
-            <button
-              onClick={() => exportStratifiedExcel({ records, selectedReactorId })}
-              className="px-3.5 py-2 text-xs font-semibold text-emerald-200 bg-emerald-950/50 border border-emerald-500/50 hover:bg-emerald-900/60 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
-              title="Extrair planilha Excel estratificada por parâmetro, lote, escala e desvios"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-              Excel
             </button>
           </div>
         </div>
 
-        {/* Dashboard Compliance Row: Card 1 (General Compliance) + Card 2 (Consolidated Accuracy by Parameter over time) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Kept Card: Indicador de Conformidade */}
-          <div className="lg:col-span-3 bg-[#0F1624] border border-slate-800/90 rounded-xl p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span className="font-semibold text-slate-200">Conformidade Geral</span>
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
-              </div>
-              <div className="text-3xl font-bold font-mono text-slate-50 tabular-nums mt-1">
-                {globalComplianceRate}%
-              </div>
-              <div className="text-xs text-slate-400 mt-2 flex items-center gap-1.5 font-mono">
-                <span className="text-emerald-400 font-semibold">{nominalChecklists} dentro</span>
-                <span>·</span>
-                <span className={deviationChecklists > 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
-                  {deviationChecklists} fora da faixa
-                </span>
-              </div>
-            </div>
+        {/* Hero Dashboard Row (Video Style): Left Main KPI + Parameter Precision Studio & Right Circular Gauge Card */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+          {/* Left 9 Columns: 3 Headline KPIs + 5 Parameter Precision Cards */}
+          <div className="xl:col-span-9 glass-panel rounded-3xl p-6 flex flex-col justify-between space-y-6">
+            {/* Top 3 Headline Metrics Strip (Like "Today, so far", "Last 7 days", "Orders today" in the Video) */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 border-b border-white/[0.07] pb-5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 flex-1">
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1">Checklists Avaliados</span>
+                  <div className="text-3xl font-bold font-mono text-white tabular-nums tracking-tight">
+                    {totalEvaluated}
+                  </div>
+                  <div className="text-xs text-blue-400 mt-1.5 font-medium">
+                    {activeReactor ? `Tanque ${activeReactor.tag}` : 'Leituras ativas na planta'}
+                  </div>
+                </div>
 
-            <div className="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Base avaliada:</span>
-              <span className="font-mono font-semibold text-slate-200">
-                {totalEvaluated} {totalEvaluated === 1 ? 'checklist' : 'checklists'}
-              </span>
-            </div>
-          </div>
+                <div className="sm:border-l sm:border-white/[0.07] sm:pl-6">
+                  <span className="text-xs text-slate-400 block mb-1">Leituras Nominais</span>
+                  <div className="text-3xl font-bold font-mono text-white tabular-nums tracking-tight">
+                    {nominalChecklists}
+                  </div>
+                  <div className="text-xs text-emerald-400 mt-1.5 font-medium">
+                    {globalComplianceRate}% dentro dos limites
+                  </div>
+                </div>
 
-          {/* Consolidated Card: Precisão de Cada Parâmetro ao Longo do Tempo */}
-          <div className="lg:col-span-9 bg-[#0F1624] border border-slate-800/90 rounded-xl p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3 mb-3.5">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-100">
-                  Consolidado de Precisão por Parâmetro ao Longo do Tempo
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Proporção de checklists precisos (dentro da faixa) vs. fora da faixa em {totalEvaluated} leituras
-                </p>
+                <div className="sm:border-l sm:border-white/[0.07] sm:pl-6">
+                  <span className="text-xs text-slate-400 block mb-1">Fora da Faixa (Desvios)</span>
+                  <div className="text-3xl font-bold font-mono text-white tabular-nums tracking-tight">
+                    {deviationChecklists}
+                  </div>
+                  <div
+                    className={`text-xs mt-1.5 font-medium ${
+                      deviationChecklists > 0 ? 'text-rose-400' : 'text-slate-400'
+                    }`}
+                  >
+                    {deviationChecklists > 0
+                      ? 'Requer atenção / ação corretiva'
+                      : 'Zero desvios registrados'}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg self-start">
+              {/* Scope Switcher Pill */}
+              <div className="flex items-center gap-1 p-1 bg-[#070B16]/90 border border-white/[0.08] rounded-full self-start">
                 <button
                   onClick={() => setComplianceScope('all')}
-                  className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap ${
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-full transition-all whitespace-nowrap ${
                     complianceScope === 'all'
-                      ? 'bg-[#131C2E] text-cyan-300 border border-cyan-500/30 font-semibold'
+                      ? 'bg-blue-600 text-white font-semibold shadow-[0_0_16px_rgba(37,99,235,0.45)]'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -773,9 +846,9 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setComplianceScope('selected')}
-                  className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors whitespace-nowrap ${
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-full transition-all whitespace-nowrap ${
                     complianceScope === 'selected'
-                      ? 'bg-[#131C2E] text-cyan-300 border border-cyan-500/30 font-semibold'
+                      ? 'bg-blue-600 text-white font-semibold shadow-[0_0_16px_rgba(37,99,235,0.45)]'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -784,85 +857,196 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-              {parameterComplianceList.map((item) => {
-                const Icon = item.icon;
-                const isPerfect = item.out === 0;
-                return (
-                  <div
-                    key={item.label}
-                    className={`p-3.5 rounded-lg border transition-colors ${
-                      isPerfect
-                        ? 'bg-[#131C2E]/90 border-slate-800'
-                        : 'bg-rose-950/30 border-rose-500/50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                      <span className="font-semibold text-slate-200 truncate">{item.label}</span>
-                      <Icon className="w-3.5 h-3.5 text-cyan-400/80 shrink-0" />
-                    </div>
+            {/* Bottom 5-Column Parameter Precision Breakdown */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-semibold text-slate-300">
+                  Precisão por Parâmetro ao Longo do Tempo
+                </h2>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  Dentro vs. Fora da Faixa
+                </span>
+              </div>
 
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span
-                        className={`text-xl font-bold font-mono tabular-nums ${
-                          isPerfect ? 'text-emerald-400' : 'text-slate-100'
-                        }`}
-                      >
-                        {item.pct.toFixed(1)}%
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400">
-                        {item.total} {item.total === 1 ? 'leitura' : 'leituras'}
-                      </span>
-                    </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                {parameterComplianceList.map((item) => {
+                  const Icon = item.icon;
+                  const isPerfect = item.out === 0;
+                  return (
+                    <div
+                      key={item.label}
+                      className={`p-3.5 rounded-2xl transition-all ${
+                        isPerfect
+                          ? 'glass-subcard hover:border-white/15'
+                          : 'bg-rose-950/30 border border-rose-500/45 shadow-[0_0_24px_rgba(244,63,94,0.12)]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                        <span className="font-semibold text-slate-200 truncate">{item.label}</span>
+                        <Icon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      </div>
 
-                    {/* Progress bar */}
-                    <div className="w-full h-1.5 bg-rose-500/40 rounded-full overflow-hidden my-2">
-                      <div
-                        className="h-full bg-emerald-400 transition-all duration-300"
-                        style={{ width: `${item.pct}%` }}
-                      />
-                    </div>
+                      <div className="flex items-baseline justify-between mt-1">
+                        <span
+                          className={`text-xl font-bold font-mono tabular-nums ${
+                            isPerfect ? 'text-white' : 'text-rose-200'
+                          }`}
+                        >
+                          {item.pct.toFixed(1)}%
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {item.total} {item.total === 1 ? 'leitura' : 'leituras'}
+                        </span>
+                      </div>
 
-                    {/* Exact counts within vs out */}
-                    <div className="flex items-center justify-between text-[11px] font-mono">
-                      <span className="text-emerald-400 font-semibold">
-                        {item.within} dentro
-                      </span>
-                      <span className={item.out > 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
-                        {item.out} fora
-                      </span>
+                      {/* Progress bar */}
+                      <div className="w-full h-1.5 bg-white/[0.08] rounded-full overflow-hidden my-2.5">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            isPerfect
+                              ? 'bg-gradient-to-r from-blue-500 to-emerald-400'
+                              : 'bg-gradient-to-r from-amber-400 to-emerald-400'
+                          }`}
+                          style={{ width: `${item.pct}%` }}
+                        />
+                      </div>
+
+                      {/* Exact counts within vs out */}
+                      <div className="flex items-center justify-between text-[11px] font-mono">
+                        <span className="text-emerald-400 font-semibold">
+                          {item.within} dentro
+                        </span>
+                        <span className={item.out > 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
+                          {item.out} fora
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right 3 Columns: Circular Arc Gauge Card (Modeled after "November goal 76%" in Video) */}
+          <div className="xl:col-span-3 glass-panel rounded-3xl p-6 flex flex-col justify-between relative overflow-hidden">
+            {/* Subtle Warm Glow Inside Gauge Card */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-12 -right-12 w-40 h-40 rounded-full opacity-35 blur-2xl"
+              style={{
+                background:
+                  'radial-gradient(circle, rgba(245, 158, 11, 0.6) 0%, rgba(37, 99, 235, 0.2) 70%, transparent 100%)',
+              }}
+            />
+
+            <div className="flex items-center justify-between relative z-10">
+              <div>
+                <h2 className="text-sm font-bold text-white">Conformidade Geral</h2>
+                <p className="text-[11px] text-slate-400">Índice de aderência GMP</p>
+              </div>
+              <CheckCircle className="w-4 h-4 text-amber-400" />
+            </div>
+
+            {/* Semi-Circular Arc Gauge */}
+            <div className="my-3 flex flex-col items-center justify-center relative z-10">
+              <svg viewBox="0 0 140 86" className="w-44 h-28 overflow-visible">
+                <defs>
+                  <linearGradient id="complianceArcGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#F59E0B" />
+                    <stop offset="55%" stopColor="#3B82F6" />
+                    <stop offset="100%" stopColor="#10B981" />
+                  </linearGradient>
+                </defs>
+                {/* Background Track Arc */}
+                <path
+                  d="M 14 72 A 56 56 0 0 1 126 72"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.09)"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                />
+                {/* Foreground Value Arc */}
+                <path
+                  d="M 14 72 A 56 56 0 0 1 126 72"
+                  fill="none"
+                  stroke="url(#complianceArcGrad)"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={arcCircumference}
+                  strokeDashoffset={arcDashOffset}
+                  className="transition-all duration-500"
+                />
+                <text
+                  x="70"
+                  y="60"
+                  textAnchor="middle"
+                  className="fill-white font-mono font-bold text-2xl"
+                >
+                  {globalComplianceRate}%
+                </text>
+                <text
+                  x="70"
+                  y="76"
+                  textAnchor="middle"
+                  className="fill-slate-400 text-[9px] font-sans"
+                >
+                  dentro da especificação
+                </text>
+              </svg>
+            </div>
+
+            {/* Summary Breakdown Rows (Matching Right Card Rows in Video) */}
+            <div className="space-y-2 pt-3 border-t border-white/[0.08] text-xs relative z-10">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Dentro da faixa</span>
+                <span className="font-mono font-semibold text-emerald-400 tabular-nums">
+                  {nominalChecklists}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Fora da faixa</span>
+                <span
+                  className={`font-mono font-semibold tabular-nums ${
+                    deviationChecklists > 0 ? 'text-rose-400' : 'text-slate-400'
+                  }`}
+                >
+                  {deviationChecklists}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Base avaliada</span>
+                <span className="font-mono font-semibold text-white tabular-nums">
+                  {totalEvaluated} {totalEvaluated === 1 ? 'check' : 'checks'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Parameter Target and Delta Reference Strip */}
-        <div className="bg-[#0F1624] border border-slate-800/90 text-slate-100 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="glass-panel rounded-2xl px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-cyan-400">
+              <span className="text-xs font-semibold text-blue-400">
                 Critérios Técnicos da Escala {activeScale} · Deltas Homologados
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-mono text-slate-300 pt-1">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs font-mono text-slate-300 pt-0.5">
               <div>
                 <span className="text-slate-400 font-sans">Temperatura: </span>
-                <strong className="text-slate-100">30.0 °C</strong> (Delta ±2.0 °C · Faixa 28.0 a 32.0 °C)
+                <strong className="text-white">30.0 °C</strong> (Delta ±2.0 °C · 28.0 a 32.0 °C)
               </div>
               <div>
                 <span className="text-slate-400 font-sans">Pressão: </span>
-                <strong className="text-slate-100">{activeSpecs.pressure.target.toFixed(2)} bar</strong> (Delta ±0.05 bar · Faixa {(activeSpecs.pressure.min ?? 0).toFixed(2)} a {(activeSpecs.pressure.max ?? 0).toFixed(2)} bar)
+                <strong className="text-white">{activeSpecs.pressure.target.toFixed(2)} bar</strong> (Delta ±0.05 bar · {(activeSpecs.pressure.min ?? 0).toFixed(2)} a {(activeSpecs.pressure.max ?? 0).toFixed(2)} bar)
               </div>
               <div>
                 <span className="text-slate-400 font-sans">Agitação: </span>
-                <strong className="text-slate-100">{activeSpecs.agitation.target} RPM</strong> (Sem delta)
+                <strong className="text-white">{activeSpecs.agitation.target} RPM</strong> (Sem delta)
               </div>
               <div>
                 <span className="text-slate-400 font-sans">Vazão de ar: </span>
-                <strong className="text-slate-100">{activeSpecs.airflow.target} L/min</strong> (Delta ±10 L/min)
+                <strong className="text-white">{activeSpecs.airflow.target} L/min</strong> (Delta ±10 L/min)
               </div>
             </div>
           </div>
@@ -870,7 +1054,7 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setIsDORefModalOpen(true)}
-              className="px-3 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-700/60 rounded-lg transition-colors flex items-center gap-1.5 whitespace-nowrap"
+              className="px-3.5 py-2 text-xs font-semibold text-blue-300 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 rounded-full transition-colors flex items-center gap-1.5 whitespace-nowrap"
             >
               <Info className="w-3.5 h-3.5" />
               Tabela O2 (100L / 5000L)
@@ -878,16 +1062,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Section 1: Parameter Averages Visualization */}
-        <section id="averages">
-          <ParameterAveragesPanel
-            records={selectedReactorId === 'all' ? (activeRecords.length > 0 ? activeRecords : records) : chartRecords}
-            scale={activeScale}
-            selectedReactorId={selectedReactorId}
-          />
-        </section>
-
-        {/* Section 2: Interactive Charts with 2-hour X-axis and O2 Min/Max Lines */}
+        {/* Section 1: Interactive Charts Studio */}
         <section id="trends">
           <InteractiveCharts
             records={chartRecords}
@@ -897,6 +1072,15 @@ export default function App() {
             selectedReactorId={selectedReactorId}
             onSelectReactor={handleSelectReactor}
             onOpenDORefModal={() => setIsDORefModalOpen(true)}
+          />
+        </section>
+
+        {/* Section 2: Parameter Averages Visualization */}
+        <section id="averages">
+          <ParameterAveragesPanel
+            records={selectedReactorId === 'all' ? (activeRecords.length > 0 ? activeRecords : records) : chartRecords}
+            scale={activeScale}
+            selectedReactorId={selectedReactorId}
           />
         </section>
 
@@ -913,10 +1097,10 @@ export default function App() {
           />
         </section>
 
-        {/* Quiet Footer with data management & GMP disclaimer */}
-        <footer className="pt-6 border-t border-slate-800/80 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3">
+        {/* Quiet Footer */}
+        <footer className="pt-6 border-t border-white/[0.07] text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span>Checklist Parâmetros de Processo · Monitoramento e Rastreabilidade de Biorreatores</span>
+            <span>BioTrack · Monitoramento e Rastreabilidade de Biorreatores</span>
             <span>·</span>
             <span>GMP / BPF Compliant</span>
           </div>
@@ -952,3 +1136,4 @@ export default function App() {
     </div>
   );
 }
+

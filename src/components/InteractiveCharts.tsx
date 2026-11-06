@@ -368,27 +368,27 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       : null;
 
   return (
-    <div className="bg-[#0F1624] border border-slate-800/90 rounded-xl p-5">
-      {/* Top Header & Tabs */}
-      <div className="flex flex-col gap-3.5 border-b border-slate-800/80 pb-4 mb-4">
+    <div className="glass-panel rounded-3xl p-6">
+      {/* Top Header & Studio Tabs */}
+      <div className="flex flex-col gap-4 border-b border-white/[0.07] pb-5 mb-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-base font-semibold text-slate-100 tracking-tight">
-                Monitoramento de Tendências & Tolerâncias (A cada 2 Horas)
+              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                Estúdio de Tendências & Tolerâncias
               </h2>
-              <span className="text-xs font-mono text-cyan-400">
+              <span className="text-xs font-mono text-blue-400">
                 · {selectedScale === 'all' && selectedReactorId === 'all' ? `Ref. Escala ${scale}` : `Escala ${scale}`}{' '}
                 {selectedReactorId !== 'all' ? `· BR-${String(selectedReactorId).padStart(2, '0')}` : '· Todos os Tanques'}
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Acompanhamento ponto a ponto de 2 em 2 horas (horários cheios) com linhas de limites mínimo/máximo e média
+              Acompanhamento ponto a ponto nos horários reais de lançamento com faixas de tolerância e média
             </p>
           </div>
 
-          {/* Tab Buttons */}
-          <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg overflow-x-auto self-start lg:self-auto">
+          {/* Studio Pill Tab Buttons (Video Style) */}
+          <div className="flex items-center gap-1 p-1 bg-[#070B16]/90 border border-white/[0.08] rounded-full overflow-x-auto self-start lg:self-auto">
             {(Object.keys(PARAM_CONFIGS) as ParameterKey[]).map((key) => {
               const cfg = PARAM_CONFIGS[key];
               const isActive = activeTab === key;
@@ -396,9 +396,9 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
                 <button
                   key={key}
                   onClick={() => setActiveTab(key)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-all ${
                     isActive
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
+                      ? 'bg-blue-600 text-white font-semibold shadow-[0_0_18px_rgba(37,99,235,0.5)]'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -410,7 +410,7 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
         </div>
 
         {/* Filter Bar Above the Chart: Escala + Tanque + Lote */}
-        <div className="flex flex-wrap items-center gap-2.5 pt-1">
+        <div className="flex flex-wrap items-center gap-3 pt-0.5">
           <div className="flex items-center gap-1.5">
             <label className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
               Escala:
@@ -418,14 +418,14 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             <select
               value={selectedScale}
               onChange={(e) => onSelectScale(e.target.value as ScaleVolume | 'all')}
-              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 font-semibold"
+              className="text-xs font-mono glass-subcard rounded-xl px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-semibold cursor-pointer"
               title="Filtrar gráfico por escala"
             >
-              <option value="all">Todas as Escalas</option>
-              <option value="100L">Escala 100L (Tanques 1 ao 5)</option>
-              <option value="500L">Escala 500L (Tanques 6 ao 10)</option>
-              <option value="5000L">Escala 5000L (Tanques 11 ao 14)</option>
-              <option value="3000L">Escala 3000L (Tanques 15 e 16)</option>
+              <option value="all" className="bg-[#0B101E]">Todas as Escalas</option>
+              <option value="100L" className="bg-[#0B101E]">Escala 100L (Tanques 1 ao 5)</option>
+              <option value="500L" className="bg-[#0B101E]">Escala 500L (Tanques 6 ao 10)</option>
+              <option value="5000L" className="bg-[#0B101E]">Escala 5000L (Tanques 11 ao 14)</option>
+              <option value="3000L" className="bg-[#0B101E]">Escala 3000L (Tanques 15 e 16)</option>
             </select>
           </div>
 
@@ -438,45 +438,45 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
               onChange={(e) =>
                 onSelectReactor(e.target.value === 'all' ? 'all' : Number(e.target.value))
               }
-              className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 font-semibold"
+              className="text-xs font-mono glass-subcard rounded-xl px-3 py-1.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 font-semibold cursor-pointer"
               title="Filtrar gráfico por tanque"
             >
-              <option value="all">
+              <option value="all" className="bg-[#0B101E]">
                 {selectedScale === 'all'
                   ? 'Todos os Tanques (1 ao 16)'
                   : `Todos os Tanques (${selectedScale})`}
               </option>
               {(selectedScale === 'all' || selectedScale === '100L') && (
-                <optgroup label="100L (Tanques 1 ao 5)">
+                <optgroup label="100L (Tanques 1 ao 5)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '100L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
               {(selectedScale === 'all' || selectedScale === '500L') && (
-                <optgroup label="500L (Tanques 6 ao 10)">
+                <optgroup label="500L (Tanques 6 ao 10)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '500L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
               {(selectedScale === 'all' || selectedScale === '5000L') && (
-                <optgroup label="5000L (Tanques 11 ao 14)">
+                <optgroup label="5000L (Tanques 11 ao 14)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '5000L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
                 </optgroup>
               )}
               {(selectedScale === 'all' || selectedScale === '3000L') && (
-                <optgroup label="3000L (Tanques 15 e 16)">
+                <optgroup label="3000L (Tanques 15 e 16)" className="bg-[#0B101E]">
                   {REACTORS.filter((r) => r.scale === '3000L').map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option key={r.id} value={r.id} className="bg-[#0B101E]">
                       {r.tag} · {r.name}
                     </option>
                   ))}
@@ -488,18 +488,18 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           {availableBatches.length > 1 && (
             <div className="flex items-center gap-1.5">
               <label className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">
-                Lote:
+                OP / Lote:
               </label>
               <select
                 value={effectiveBatchFilter}
                 onChange={(e) => setSelectedBatchFilter(e.target.value)}
-                className="text-xs font-mono bg-[#080C14] border border-slate-700/90 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                className="text-xs font-mono glass-subcard rounded-xl px-3 py-1.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
                 title="Filtrar por lote no gráfico"
               >
-                <option value="all">Todos os Lotes ({records.length})</option>
+                <option value="all" className="bg-[#0B101E]">Todos os Lotes ({records.length})</option>
                 {availableBatches.map((b) => (
-                  <option key={b} value={b}>
-                    Lote {b}
+                  <option key={b} value={b} className="bg-[#0B101E]">
+                    OP {b}
                   </option>
                 ))}
               </select>
@@ -509,10 +509,10 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
       </div>
 
       {/* Target, Average & Delta Metric Ribbon */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4 bg-[#131C2E]/80 p-3.5 rounded-lg border border-slate-800 text-xs">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5 glass-subcard p-4 rounded-2xl text-xs">
         <div>
-          <span className="text-slate-400 block">Alvo (Setpoint)</span>
-          <span className="text-sm font-bold font-mono text-slate-100">
+          <span className="text-slate-400 block mb-0.5">Alvo (Setpoint)</span>
+          <span className="text-sm font-bold font-mono text-white">
             {activeTab === 'dissolvedOxygen'
               ? isAllScalesView
                 ? 'Curvas 100L e 5000L'
@@ -529,14 +529,14 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           </span>
         </div>
         <div>
-          <span className="text-slate-400 block">Média Calculada</span>
-          <span className="text-sm font-bold font-mono text-cyan-400">
+          <span className="text-slate-400 block mb-0.5">Média Calculada</span>
+          <span className="text-sm font-bold font-mono text-blue-400">
             {avgValue !== null ? `${avgValue.toFixed(2)} ${currentConfig.unit}` : '-'}
           </span>
         </div>
         <div>
-          <span className="text-slate-400 block">Tolerância / Limites</span>
-          <span className="text-sm font-bold font-mono text-slate-100">
+          <span className="text-slate-400 block mb-0.5">Tolerância / Limites</span>
+          <span className="text-sm font-bold font-mono text-white">
             {activeTab === 'dissolvedOxygen'
               ? isAllScalesView || doPhases
                 ? 'Linhas Mín e Máx por Escala/Fase'
@@ -547,8 +547,8 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           </span>
         </div>
         <div>
-          <span className="text-slate-400 block">Faixa Nominal</span>
-          <span className="text-sm font-bold font-mono text-slate-100">
+          <span className="text-slate-400 block mb-0.5">Faixa Nominal</span>
+          <span className="text-sm font-bold font-mono text-white">
             {isAllScalesView
               ? activeTab === 'temperature'
                 ? '28.0 a 32.0 °C (Todas)'
@@ -568,15 +568,15 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
           {activeTab === 'dissolvedOxygen' ? (
             <button
               onClick={onOpenDORefModal}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-700/60 px-2.5 py-1 rounded whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-300 hover:text-blue-200 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/35 px-3 py-1.5 rounded-full whitespace-nowrap transition-colors"
             >
               <Info className="w-3.5 h-3.5" />
               Tabela de Fases O2
             </button>
           ) : (
             <div className="text-right">
-              <span className="text-slate-400 block">Total de Amostras</span>
-              <span className="text-sm font-bold font-mono text-slate-100">{sortedRecords.length}</span>
+              <span className="text-slate-400 block mb-0.5">Total de Amostras</span>
+              <span className="text-sm font-bold font-mono text-white">{sortedRecords.length}</span>
             </div>
           )}
         </div>
@@ -592,8 +592,13 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
         >
           <defs>
             <linearGradient id="bandGradientDark" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.16" />
-              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.05" />
+              <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.18" />
+              <stop offset="100%" stopColor="#3B82F6" stopOpacity="0.03" />
+            </linearGradient>
+            <linearGradient id="studioAreaFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.32" />
+              <stop offset="65%" stopColor="#2563EB" stopOpacity="0.09" />
+              <stop offset="100%" stopColor="#2563EB" stopOpacity="0.0" />
             </linearGradient>
             <linearGradient id="doTunnelGradientDark" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0.22" />
@@ -601,14 +606,16 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             </linearGradient>
           </defs>
 
-          {/* Dark Grid Background */}
+          {/* Dark Studio Grid Background */}
           <rect
             x={padding.left}
             y={padding.top}
             width={chartW}
             height={chartH}
-            fill="#090D16"
-            stroke="#1E293B"
+            rx="12"
+            fill="#060A15"
+            fillOpacity="0.78"
+            stroke="rgba(255,255,255,0.07)"
             strokeWidth="1"
           />
 
@@ -1079,33 +1086,47 @@ export const InteractiveCharts: React.FC<InteractiveChartsProps> = ({
             </g>
           )}
 
-          {/* Time Series Measured Lines: Por Escala quando em "Todas as Escalas", ou linha única quando filtrado */}
+          {/* Time Series Measured Lines + Glowing Area Fill (Studio Style) */}
           {isAllScalesView
             ? ALL_SCALES_ORDER.map((sc) => {
                 const scPoints = points.filter((p) => p.record.scale === sc);
                 if (scPoints.length < 2) return null;
                 const scPoly = scPoints.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+                const firstPt = scPoints[0];
+                const lastPt = scPoints[scPoints.length - 1];
+                const baseLineY = padding.top + chartH;
+                const areaPoly = `${firstPt.x.toFixed(1)},${baseLineY} ${scPoly} ${lastPt.x.toFixed(1)},${baseLineY}`;
                 return (
-                  <polyline
-                    key={`poly-${sc}`}
-                    fill="none"
-                    stroke={SCALE_VISUAL_CONFIG[sc].color}
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    points={scPoly}
-                  />
+                  <g key={`poly-${sc}`}>
+                    <polygon points={areaPoly} fill="url(#studioAreaFill)" />
+                    <polyline
+                      fill="none"
+                      stroke={SCALE_VISUAL_CONFIG[sc].color}
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={scPoly}
+                    />
+                  </g>
                 );
               })
             : points.length > 1 && (
-                <polyline
-                  fill="none"
-                  stroke={SCALE_VISUAL_CONFIG[scale].color}
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  points={polylinePoints}
-                />
+                <g>
+                  <polygon
+                    points={`${points[0].x.toFixed(1)},${padding.top + chartH} ${polylinePoints} ${points[
+                      points.length - 1
+                    ].x.toFixed(1)},${padding.top + chartH}`}
+                    fill="url(#studioAreaFill)"
+                  />
+                  <polyline
+                    fill="none"
+                    stroke={SCALE_VISUAL_CONFIG[scale].color}
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={polylinePoints}
+                  />
+                </g>
               )}
 
           {/* Data Points */}

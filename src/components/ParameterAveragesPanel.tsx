@@ -230,14 +230,14 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
   ];
 
   return (
-    <div className="bg-[#0F1624] border border-slate-800/90 rounded-xl p-5">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800/80 pb-4 mb-4">
+    <div className="glass-panel rounded-3xl p-6">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-white/[0.06] pb-4 mb-5">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-base font-semibold text-slate-100 tracking-tight">
+            <h2 className="text-base font-bold text-white tracking-tight">
               Média de Cada Parâmetro Monitorado
             </h2>
-            <span className="text-xs font-mono text-cyan-400">
+            <span className="text-xs font-mono text-blue-400">
               ·{' '}
               {selectedReactorId === 'all'
                 ? `Escala ${effectiveScaleMode}`
@@ -252,9 +252,9 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
 
         {/* Seletor rápido de Escala quando "Todos os Biorreatores" está ativo */}
         {isGlobalAll && (
-          <div className="flex items-center gap-1 p-1 bg-[#080C14] border border-slate-800 rounded-lg self-start overflow-x-auto">
-            <span className="text-[11px] text-slate-400 px-2 flex items-center gap-1 whitespace-nowrap">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
+          <div className="flex items-center gap-1 p-1 bg-[#070B16]/90 border border-white/[0.08] rounded-full self-start overflow-x-auto">
+            <span className="text-[11px] text-slate-400 px-2.5 flex items-center gap-1 whitespace-nowrap">
+              <Layers className="w-3.5 h-3.5 text-blue-400" />
               Escala:
             </span>
             {ALL_SCALES.map((s) => {
@@ -263,9 +263,9 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
                 <button
                   key={s}
                   onClick={() => setSelectedScaleTab(s)}
-                  className={`px-2.5 py-1 text-xs font-mono rounded-md transition-colors whitespace-nowrap ${
+                  className={`px-3 py-1.5 text-xs font-mono rounded-full transition-all whitespace-nowrap ${
                     selectedScaleTab === s
-                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold'
+                      ? 'bg-blue-600 text-white font-semibold shadow-[0_0_16px_rgba(37,99,235,0.45)]'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -288,16 +288,16 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
             return (
               <div
                 key={param.key}
-                className={`rounded-lg p-4 border transition-colors flex flex-col justify-between ${
+                className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
                   param.isNominal
-                    ? 'bg-[#131C2E]/90 border-slate-800 hover:border-slate-700'
-                    : 'bg-rose-950/30 border-rose-500/60'
+                    ? 'glass-subcard hover:border-blue-500/30'
+                    : 'bg-rose-950/30 border-rose-500/50'
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
                     <span className="font-semibold text-slate-200">{param.name}</span>
-                    <Icon className="w-4 h-4 text-cyan-400/80 shrink-0" />
+                    <Icon className="w-4 h-4 text-blue-400 shrink-0" />
                   </div>
 
                   {/* Primary Average Readout */}
@@ -306,7 +306,7 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
                       {param.scaleBreakdown ? 'Média Geral (Multi-Escala)' : 'Média Calculada'}
                     </span>
                     <div className="flex items-baseline gap-1.5 mt-0.5">
-                      <span className="text-2xl font-bold font-mono text-slate-50 tabular-nums">
+                      <span className="text-2xl font-bold font-mono text-white tabular-nums">
                         {param.avg.toFixed(param.decimals)}
                       </span>
                       <span className="text-xs font-mono uppercase text-slate-400">{param.unit}</span>
@@ -324,7 +324,7 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
                           Math.abs(param.diffFromTarget) < 0.01
                             ? 'text-emerald-400'
                             : param.isNominal
-                            ? 'text-cyan-300'
+                            ? 'text-blue-400'
                             : 'text-rose-400'
                         }`}
                       >
@@ -338,14 +338,14 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
 
                   {/* Estratificação por Escala quando "Todas" está selecionado */}
                   {param.scaleBreakdown && param.scaleBreakdown.length > 0 && (
-                    <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/90 block">
+                    <div className="mt-2.5 pt-2 border-t border-white/[0.06] space-y-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400/90 block">
                         Média por Escala:
                       </span>
                       {param.scaleBreakdown.map((item) => (
                         <div
                           key={item.scale}
-                          className="flex items-center justify-between text-[10px] font-mono bg-[#080C14]/70 px-2 py-0.5 rounded border border-slate-800/70"
+                          className="flex items-center justify-between text-[10px] font-mono bg-[#070B16]/70 px-2 py-0.5 rounded border border-white/[0.06]"
                         >
                           <span className="text-slate-300 font-semibold">{item.scale}:</span>
                           <span className="text-slate-100 font-bold">
@@ -359,7 +359,7 @@ export const ParameterAveragesPanel: React.FC<ParameterAveragesPanelProps> = ({
                 </div>
 
                 {/* Min / Max & Spec Footer */}
-                <div className="mt-3 pt-2.5 border-t border-slate-800/90 space-y-1 text-[11px] font-mono">
+                <div className="mt-3 pt-2.5 border-t border-white/[0.06] space-y-1 text-[11px] font-mono">
                   <div className="flex justify-between text-slate-400">
                     <span>Mín / Máx:</span>
                     <span className="font-semibold text-slate-200">
